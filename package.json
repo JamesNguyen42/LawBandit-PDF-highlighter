@@ -1,0 +1,33 @@
+{
+  "name": "lawbandit-pdf-highlighter",
+  "version": "1.0.0",
+  "description": "Enhanced PDF reader with smooth highlighting for law students",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "lucide-react": "^0.542.0",
+    "next": "^15.5.2",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.149",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-highlight-words": "^0.21.0",
+    "react-pdf": "^10.1.0",
+    "react-pdf-highlighter": "^8.0.0-rc.0",
+    "react-textarea-autosize": "^8.5.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.12",
+    "typescript": "^5.9.2"
+  }
+}
