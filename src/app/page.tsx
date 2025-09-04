@@ -3,8 +3,7 @@
 
 import { useState } from "react";
 import PDFUpload from "@/components/PDFUpload";
-// Use SimplePDFViewer instead since it's more stable
-import SimplePDFViewer from "@/components/SimplePDFViewer";
+import PDFViewer from "@/components/PDFViewer";
 
 export default function Home() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -29,7 +28,7 @@ export default function Home() {
                             margin: "0 auto",
                             marginBottom: "2rem"
                         }}>
-                            Enhanced PDF reader with smooth highlighting designed for law students
+                             PDF reader with smooth highlighting designed for law students
                         </p>
                         <p style={{
                             fontSize: "1rem",
@@ -55,26 +54,53 @@ export default function Home() {
                             marginBottom: "1rem",
                             color: "#1f2937"
                         }}>
-                            Key Features:
+                            🎉 NEW: Direct Text Highlighting!
                         </h3>
                         <div style={{
                             display: "grid",
                             gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
                             gap: "1rem",
-                            color: "#4b5563"
+                            color: "#4b5563",
+                            marginBottom: "1rem"
                         }}>
                             <div>
-                                <strong>Visual Highlighting:</strong> See your highlights directly on the PDF with multiple colors
+                                <strong>✨ Direct Highlighting:</strong> Select text directly in the PDF - no more copy/paste needed!
                             </div>
                             <div>
-                                <strong>Click Navigation:</strong> Jump to highlights by clicking them in the sidebar
+                                <strong>🎨 Visual Color Selection:</strong> Six beautiful highlight colors with instant preview
                             </div>
                             <div>
-                                <strong>Clean Interface:</strong> Modern design optimized for law students
+                                <strong>🔍 Smart Search:</strong> Find specific highlights quickly with built-in search
                             </div>
                             <div>
-                                <strong>Smooth Selection:</strong> Improved highlighting experience with better text selection
+                                <strong>📱 Click to Navigate:</strong> Jump to any highlight by clicking it in the sidebar
                             </div>
+                            <div>
+                                <strong>💾 Export Features:</strong> Save your highlights as JSON for future reference
+                            </div>
+                            <div>
+                                <strong>🎯 Smooth Experience:</strong> Toggle highlighting mode on/off with one click
+                            </div>
+                        </div>
+
+                        <div style={{
+                            padding: "1rem",
+                            backgroundColor: "#f0f9ff",
+                            borderRadius: "8px",
+                            border: "1px solid #0ea5e9",
+                            marginTop: "1rem"
+                        }}>
+                            <h4 style={{ color: "#0c4a6e", marginBottom: "0.5rem", fontWeight: "600" }}>
+                                How to use the new highlighting:
+                            </h4>
+                            <ol style={{ color: "#0c4a6e", fontSize: "0.9rem", paddingLeft: "1.2rem" }}>
+                                <li>Upload your PDF document</li>
+                                <li>Choose your highlight color from the palette</li>
+                                <li>Click "Start Highlighting" to enable highlight mode</li>
+                                <li>Simply select any text in the PDF - it will be highlighted automatically!</li>
+                                <li>View all highlights in the sidebar and click to jump to them</li>
+                                <li>Export your highlights or clear them when needed</li>
+                            </ol>
                         </div>
                     </div>
                 </div>
@@ -92,8 +118,9 @@ export default function Home() {
                         <button
                             onClick={() => setSelectedFile(null)}
                             className="btn btn-primary"
+                            style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
                         >
-                            Back to Upload
+                            ← Back to Upload
                         </button>
                         <h2 style={{
                             fontSize: "1.25rem",
@@ -106,11 +133,21 @@ export default function Home() {
                         }}>
                             {selectedFile.name}
                         </h2>
-                        <div style={{ color: "#6b7280", fontSize: "0.875rem" }}>
-                            {(selectedFile.size / 1024 / 1024).toFixed(1)} MB
+                        <div style={{ color: "#6b7280", fontSize: "0.875rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+                            <span>{(selectedFile.size / 1024 / 1024).toFixed(1)} MB</span>
+                            <span style={{
+                                padding: "0.25rem 0.75rem",
+                                backgroundColor: "#10b981",
+                                color: "white",
+                                borderRadius: "12px",
+                                fontSize: "0.75rem",
+                                fontWeight: "500"
+                            }}>
+                                
+                            </span>
                         </div>
                     </div>
-                    <SimplePDFViewer file={selectedFile} />
+                    <PDFViewer file={selectedFile} />
                 </div>
             )}
         </div>
