@@ -25,5 +25,16 @@
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
     "typescript": "^5.9.2"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JamesNguyen42/LawBandit-PDF-highlighter.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/JamesNguyen42/LawBandit-PDF-highlighter/issues"
+  },
+  "homepage": "https://github.com/JamesNguyen42/LawBandit-PDF-highlighter#readme"
 }
