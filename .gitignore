@@ -29,7 +29,21 @@ next-env.d.ts
 # IDE
 .vscode/
 .idea/
+
+# Visual Studio
 .vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Local development
+*.local
+
+# Temporary files
+*.tmp
+*.temp
