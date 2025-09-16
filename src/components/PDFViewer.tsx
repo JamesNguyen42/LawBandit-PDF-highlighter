@@ -1,4 +1,4 @@
-﻿// Enhanced PDF Viewer with Direct Text Highlighting - FIXED VERSION
+﻿// Enhanced PDF Viewer with Direct Text Highlighting - COMPLETE FIXED VERSION
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Highlighter, Trash2, Download, Search, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Copy, Palette } from 'lucide-react';
 
@@ -40,6 +40,8 @@ const PDFHighlighter = () => {
     const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set());
     const [customColors, setCustomColors] = useState<ColorOption[]>([]);
     const [showColorPicker, setShowColorPicker] = useState(false);
+    const [pageInputValue, setPageInputValue] = useState('');
+    const [zoomInputValue, setZoomInputValue] = useState('');
 
     // Refs
     const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -64,13 +66,11 @@ const PDFHighlighter = () => {
 
     // Helper function to generate background color from main color
     const generateBackgroundColor = (mainColor: string) => {
-        // Convert hex to RGB
         const hex = mainColor.replace('#', '');
         const r = parseInt(hex.substr(0, 2), 16);
         const g = parseInt(hex.substr(2, 2), 16);
         const b = parseInt(hex.substr(4, 2), 16);
 
-        // Create a lighter version (increase brightness)
         const lighten = (color: number) => Math.min(255, Math.floor(color + (255 - color) * 0.7));
 
         const lightR = lighten(r);
@@ -93,24 +93,18 @@ const PDFHighlighter = () => {
 
         setCustomColors(prev => [...prev, newColor]);
         setShowColorPicker(false);
-
-        // Auto-select the new color
         setSelectedColor(colorHex);
         setSelectedBackground(backgroundColor);
-
         showToast(`Added custom color: ${colorHex}`);
     };
 
     // Remove custom color
     const removeCustomColor = (colorValue: string) => {
         setCustomColors(prev => prev.filter(color => color.value !== colorValue));
-
-        // If we're removing the currently selected color, switch to yellow
         if (selectedColor === colorValue) {
             setSelectedColor('#fbbf24');
             setSelectedBackground('#fef3c7');
         }
-
         showToast('Custom color removed');
     };
 
@@ -124,10 +118,7 @@ const PDFHighlighter = () => {
                 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
         };
         document.body.appendChild(script);
-
-        return () => {
-            document.body.removeChild(script);
-        };
+        return () => document.body.removeChild(script);
     }, []);
 
     // Handle file upload
@@ -164,7 +155,7 @@ const PDFHighlighter = () => {
 
     // Render PDF page
     const renderPage = async (pdf: any, pageNum: number) => {
-        if (!pdf || renderedPages.has(pageNum)) return;
+        if (!pdf) return;
 
         try {
             const page = await pdf.getPage(pageNum);
@@ -179,7 +170,6 @@ const PDFHighlighter = () => {
             canvas.height = viewport.height;
             canvas.width = viewport.width;
 
-            // Render PDF page
             const renderContext = {
                 canvasContext: context,
                 viewport: viewport,
@@ -187,15 +177,12 @@ const PDFHighlighter = () => {
 
             await page.render(renderContext).promise;
 
-            // Render text layer for selection
             const textContent = await page.getTextContent();
 
-            // Clear previous text layer
             textLayer.innerHTML = '';
             textLayer.style.width = viewport.width + 'px';
             textLayer.style.height = viewport.height + 'px';
 
-            // Build text layer
             window.pdfjsLib.renderTextLayer({
                 textContent: textContent,
                 container: textLayer,
@@ -203,10 +190,7 @@ const PDFHighlighter = () => {
                 textDivs: [],
             });
 
-            // Mark as rendered
             setRenderedPages(prev => new Set([...prev, pageNum]));
-
-            // Render existing highlights for this page
             setTimeout(() => renderHighlights(pageNum), 200);
         } catch (error) {
             console.error('Error rendering page:', error);
@@ -218,34 +202,34 @@ const PDFHighlighter = () => {
         const highlightLayer = highlightLayerRefs.current.get(pageNum);
         if (!highlightLayer) return;
 
-        // Force clear the layer
         while (highlightLayer.firstChild) {
             highlightLayer.removeChild(highlightLayer.firstChild);
         }
 
-        // Use provided highlights or current state
         const currentHighlights = highlightsToRender || highlights;
         const pageHighlights = currentHighlights.filter(h => h.pageNumber === pageNum);
 
         pageHighlights.forEach(highlight => {
             if (highlight.position) {
                 const highlightDiv = document.createElement('div');
-                highlightDiv.style.position = 'absolute';
-                highlightDiv.style.left = highlight.position.x + 'px';
-                highlightDiv.style.top = highlight.position.y + 'px';
-                highlightDiv.style.width = highlight.position.width + 'px';
-                highlightDiv.style.height = highlight.position.height + 'px';
-                highlightDiv.style.backgroundColor = highlight.background;
-                highlightDiv.style.opacity = '0.4';
-                highlightDiv.style.pointerEvents = 'none';
-                highlightDiv.style.borderRadius = '2px';
+                Object.assign(highlightDiv.style, {
+                    position: 'absolute',
+                    left: highlight.position.x + 'px',
+                    top: highlight.position.y + 'px',
+                    width: highlight.position.width + 'px',
+                    height: highlight.position.height + 'px',
+                    backgroundColor: highlight.background,
+                    opacity: '0.4',
+                    pointerEvents: 'none',
+                    borderRadius: '2px'
+                });
                 highlightDiv.className = 'pdf-highlight';
                 highlightLayer.appendChild(highlightDiv);
             }
         });
     }, [highlights]);
 
-    // Create highlight function - Fixed to immediately render
+    // Create highlight function
     const createHighlight = useCallback((text: string, color: string, background: string) => {
         if (!text || text.length < 2) return;
 
@@ -255,11 +239,9 @@ const PDFHighlighter = () => {
         const range = selection.getRangeAt(0);
         const rect = range.getBoundingClientRect();
 
-        // Find which text layer this selection is in
         let selectedPageNum = currentPage;
         let textLayer = textLayerRefs.current.get(currentPage);
 
-        // Check if selection is in a different page's text layer
         for (let [pageNum, layer] of textLayerRefs.current) {
             const layerRect = layer.getBoundingClientRect();
             if (rect.top >= layerRect.top && rect.bottom <= layerRect.bottom) {
@@ -290,28 +272,19 @@ const PDFHighlighter = () => {
             created: new Date().toLocaleTimeString(),
         };
 
-        // Update highlights state
         const updatedHighlights = [...highlights, newHighlight];
         setHighlights(updatedHighlights);
-
-        // Force immediate re-render with the new highlights
         renderHighlights(selectedPageNum, updatedHighlights);
-
         showToast(`Highlighted: "${text.substring(0, 30)}${text.length > 30 ? '...' : ''}"`);
-
-        // Clear selection
         selection.removeAllRanges();
     }, [currentPage, highlights, renderHighlights]);
 
-    // Handle color selection - this now creates the highlight
+    // Handle color selection
     const handleColorSelection = useCallback((color: ColorOption) => {
         setSelectedColor(color.value);
         setSelectedBackground(color.bg);
-
-        // Get current selection and create highlight immediately
         const selection = window.getSelection();
         const text = selection?.toString().trim();
-
         if (text && text.length > 2) {
             createHighlight(text, color.value, color.bg);
         }
@@ -324,10 +297,8 @@ const PDFHighlighter = () => {
             const text = selection?.toString().trim();
             setSelectedText(text || '');
         };
-
         document.addEventListener('mouseup', handleSelection);
         document.addEventListener('touchend', handleSelection);
-
         return () => {
             document.removeEventListener('mouseup', handleSelection);
             document.removeEventListener('touchend', handleSelection);
@@ -337,36 +308,30 @@ const PDFHighlighter = () => {
     // Toast notification
     const showToast = (message: string) => {
         const toast = document.createElement('div');
-        toast.className = 'toast';
         toast.textContent = message;
-        toast.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: #10b981;
-      color: white;
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-weight: 500;
-      z-index: 10000;
-      animation: slideIn 0.3s ease;
-    `;
-
+        Object.assign(toast.style, {
+            position: 'fixed',
+            top: '20px',
+            right: '20px',
+            background: '#10b981',
+            color: 'white',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            fontWeight: '500',
+            zIndex: '10000',
+            animation: 'slideIn 0.3s ease'
+        });
         document.body.appendChild(toast);
-        setTimeout(() => {
-            toast.remove();
-        }, 3000);
+        setTimeout(() => toast.remove(), 3000);
     };
 
-    // Scroll handling for page navigation
+    // Scroll handling
     const handleScroll = useCallback(() => {
         if (!scrollContainerRef.current || !pdfDoc) return;
 
         const container = scrollContainerRef.current;
-        const scrollTop = container.scrollTop;
         const containerHeight = container.clientHeight;
 
-        // Find which page is most visible
         let mostVisiblePage = 1;
         let maxVisibleHeight = 0;
 
@@ -377,7 +342,6 @@ const PDFHighlighter = () => {
             const pageRect = pageContainer.getBoundingClientRect();
             const containerRect = container.getBoundingClientRect();
 
-            // Calculate visible portion of this page
             const pageTop = pageRect.top - containerRect.top;
             const pageBottom = pageRect.bottom - containerRect.top;
 
@@ -393,9 +357,9 @@ const PDFHighlighter = () => {
 
         if (mostVisiblePage !== currentPage) {
             setCurrentPage(mostVisiblePage);
+            setPageInputValue('');
         }
 
-        // Lazy load nearby pages
         for (let i = Math.max(1, mostVisiblePage - 1); i <= Math.min(totalPages, mostVisiblePage + 1); i++) {
             if (!renderedPages.has(i)) {
                 renderPage(pdfDoc, i);
@@ -403,11 +367,9 @@ const PDFHighlighter = () => {
         }
     }, [currentPage, totalPages, pdfDoc, renderedPages, renderPage]);
 
-    // Add scroll listener
     useEffect(() => {
         const container = scrollContainerRef.current;
         if (!container) return;
-
         container.addEventListener('scroll', handleScroll);
         return () => container.removeEventListener('scroll', handleScroll);
     }, [handleScroll]);
@@ -422,7 +384,7 @@ const PDFHighlighter = () => {
         if (pageContainer && scrollContainer) {
             const containerRect = scrollContainer.getBoundingClientRect();
             const pageRect = pageContainer.getBoundingClientRect();
-            const scrollTop = scrollContainer.scrollTop + (pageRect.top - containerRect.top) - 20; // 20px offset
+            const scrollTop = scrollContainer.scrollTop + (pageRect.top - containerRect.top) - 20;
 
             scrollContainer.scrollTo({
                 top: scrollTop,
@@ -431,21 +393,77 @@ const PDFHighlighter = () => {
         }
 
         setCurrentPage(pageNum);
+        setPageInputValue('');
     };
 
-    // Zoom - Re-render all visible pages
-    const handleZoom = (newScale: number) => {
-        setScale(newScale);
-        setRenderedPages(new Set()); // Clear rendered pages to force re-render
-        if (pdfDoc) {
-            // Re-render current and nearby pages
-            for (let i = Math.max(1, currentPage - 1); i <= Math.min(totalPages, currentPage + 1); i++) {
-                renderPage(pdfDoc, i);
+    // Handle page input
+    const handlePageInput = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            const pageNum = parseInt(pageInputValue);
+            if (pageNum && pageNum >= 1 && pageNum <= totalPages) {
+                goToPage(pageNum);
+            } else {
+                showToast(`Please enter a valid page number (1-${totalPages})`);
+                setPageInputValue('');
             }
         }
     };
 
-    // Export highlights - Enhanced with color information
+    // Zoom - Re-render ALL pages that exist when zoom changes
+    const handleZoom = (newScale: number) => {
+        setScale(newScale);
+        setZoomInputValue('');
+
+        if (pdfDoc) {
+            // Clear rendered pages to force re-render at new scale
+            setRenderedPages(new Set());
+
+            // Get currently visible pages and render them immediately
+            const container = scrollContainerRef.current;
+            const visiblePages = [];
+
+            if (container) {
+                const containerRect = container.getBoundingClientRect();
+
+                for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                    const pageContainer = pageContainerRefs.current.get(pageNum);
+                    if (pageContainer) {
+                        const pageRect = pageContainer.getBoundingClientRect();
+
+                        // If page is even partially visible
+                        if (pageRect.bottom >= containerRect.top && pageRect.top <= containerRect.bottom) {
+                            visiblePages.push(pageNum);
+                        }
+                    }
+                }
+            }
+
+            // If no visible pages detected, fall back to current page
+            if (visiblePages.length === 0) {
+                visiblePages.push(currentPage);
+            }
+
+            // Render visible pages immediately
+            visiblePages.forEach(pageNum => {
+                renderPage(pdfDoc, pageNum);
+            });
+        }
+    };
+
+    // Handle zoom input
+    const handleZoomInput = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            const zoomValue = parseFloat(zoomInputValue);
+            if (zoomValue && zoomValue >= 50 && zoomValue <= 300) {
+                handleZoom(zoomValue / 100);
+            } else {
+                showToast('Please enter a valid zoom percentage (50-300)');
+                setZoomInputValue('');
+            }
+        }
+    };
+
+    // Export highlights
     const exportHighlights = () => {
         if (highlights.length === 0) {
             showToast('No highlights to export');
@@ -455,7 +473,7 @@ const PDFHighlighter = () => {
         const data = {
             filename: file?.name,
             highlights: highlights,
-            customColors: customColors, // Include custom colors in export
+            customColors: customColors,
             totalPages: totalPages,
             exported: new Date().toISOString(),
         };
@@ -471,12 +489,11 @@ const PDFHighlighter = () => {
         showToast(`Exported ${highlights.length} highlights + ${customColors.length} custom colors`);
     };
 
-    // Delete highlight - Fixed to immediately update display
+    // Delete highlight
     const deleteHighlight = useCallback((highlightId: string) => {
         const highlightToDelete = highlights.find(h => h.id === highlightId);
         const updatedHighlights = highlights.filter(h => h.id !== highlightId);
         setHighlights(updatedHighlights);
-        // Force immediate re-render with updated highlights on the correct page
         if (highlightToDelete) {
             renderHighlights(highlightToDelete.pageNumber, updatedHighlights);
         }
@@ -513,7 +530,7 @@ const PDFHighlighter = () => {
                         color: '#6b7280',
                         marginBottom: '3rem',
                     }}>
-                        Enhanced PDF reader with smooth, direct text highlighting
+                        Enhanced PDF reader with smooth highlighting and input controls
                     </p>
 
                     <div
@@ -597,7 +614,7 @@ const PDFHighlighter = () => {
                     </div>
                 )}
 
-                {/* Color Picker */}
+                {/* Color Picker Section */}
                 <div style={{ padding: '1.5rem', borderBottom: '1px solid #e5e7eb' }}>
                     <div style={{
                         display: 'flex',
@@ -632,7 +649,6 @@ const PDFHighlighter = () => {
                         </button>
                     </div>
 
-                    {/* Custom Color Picker */}
                     {showColorPicker && (
                         <div style={{
                             padding: '1rem',
@@ -654,10 +670,7 @@ const PDFHighlighter = () => {
                                         borderRadius: '0.375rem',
                                         cursor: 'pointer',
                                     }}
-                                    onChange={(e) => {
-                                        const color = e.target.value;
-                                        addCustomColor(color);
-                                    }}
+                                    onChange={(e) => addCustomColor(e.target.value)}
                                 />
                                 <button
                                     onClick={() => setShowColorPicker(false)}
@@ -677,7 +690,6 @@ const PDFHighlighter = () => {
                         </div>
                     )}
 
-                    {/* Color Grid */}
                     <div style={{
                         display: 'grid',
                         gridTemplateColumns: 'repeat(3, 1fr)',
@@ -704,7 +716,6 @@ const PDFHighlighter = () => {
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                             transition: 'all 0.2s',
-                                            position: 'relative',
                                         }}
                                         title={selectedText ? `Highlight with ${color.name}` : `Select text first - ${color.name}`}
                                     >
@@ -716,7 +727,6 @@ const PDFHighlighter = () => {
                                         }} />
                                     </button>
 
-                                    {/* Remove button for custom colors */}
                                     {isCustom && (
                                         <button
                                             onClick={(e) => {
@@ -749,22 +759,9 @@ const PDFHighlighter = () => {
                             );
                         })}
                     </div>
-
-                    {customColors.length > 0 && (
-                        <div style={{
-                            marginTop: '0.75rem',
-                            fontSize: '0.75rem',
-                            color: '#6b7280',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.25rem',
-                        }}>
-                            💡 Custom colors have × button to remove
-                        </div>
-                    )}
                 </div>
 
-                {/* Actions */}
+                {/* Actions Section */}
                 <div style={{ padding: '1.5rem', borderBottom: '1px solid #e5e7eb' }}>
                     <input
                         type="text"
@@ -805,9 +802,7 @@ const PDFHighlighter = () => {
 
                         <button
                             onClick={() => {
-                                // Clear all highlights immediately from all pages
                                 setHighlights([]);
-                                // Re-render all currently visible pages
                                 for (let pageNum of renderedPages) {
                                     renderHighlights(pageNum, []);
                                 }
@@ -965,8 +960,42 @@ const PDFHighlighter = () => {
                                 <ChevronLeft size={16} />
                             </button>
 
-                            <span style={{ padding: '0 1rem', fontSize: '0.875rem' }}>
-                                Page {currentPage} of {totalPages}
+                            <span style={{ padding: '0 0.5rem', fontSize: '0.875rem' }}>
+                                Page
+                            </span>
+
+                            <input
+                                type="text"
+                                value={pageInputValue}
+                                onChange={(e) => setPageInputValue(e.target.value.replace(/\D/g, ''))}
+                                onKeyPress={handlePageInput}
+                                onFocus={(e) => {
+                                    if (!pageInputValue) {
+                                        setPageInputValue('');
+                                    }
+                                    e.target.select();
+                                }}
+                                onBlur={() => {
+                                    if (!pageInputValue) {
+                                        setPageInputValue('');
+                                    }
+                                }}
+                                style={{
+                                    width: '50px',
+                                    padding: '0.25rem 0.5rem',
+                                    border: '1px solid #d1d5db',
+                                    borderRadius: '0.375rem',
+                                    fontSize: '0.875rem',
+                                    textAlign: 'center',
+                                    backgroundColor: 'white',
+                                    cursor: 'text',
+                                }}
+                                placeholder={String(currentPage)}
+                                title="Click to enter page number, press Enter to go"
+                            />
+
+                            <span style={{ padding: '0 0.5rem', fontSize: '0.875rem' }}>
+                                of {totalPages}
                             </span>
 
                             <button
@@ -999,9 +1028,35 @@ const PDFHighlighter = () => {
                                 <ZoomOut size={16} />
                             </button>
 
-                            <span style={{ padding: '0 0.5rem', fontSize: '0.875rem', minWidth: '60px', textAlign: 'center' }}>
-                                {Math.round(scale * 100)}%
-                            </span>
+                            <input
+                                type="text"
+                                value={zoomInputValue}
+                                onChange={(e) => setZoomInputValue(e.target.value.replace(/\D/g, ''))}
+                                onKeyPress={handleZoomInput}
+                                onFocus={(e) => {
+                                    if (!zoomInputValue) {
+                                        setZoomInputValue('');
+                                    }
+                                    e.target.select();
+                                }}
+                                onBlur={() => {
+                                    if (!zoomInputValue) {
+                                        setZoomInputValue('');
+                                    }
+                                }}
+                                style={{
+                                    width: '60px',
+                                    padding: '0.25rem 0.5rem',
+                                    border: '1px solid #d1d5db',
+                                    borderRadius: '0.375rem',
+                                    fontSize: '0.875rem',
+                                    textAlign: 'center',
+                                    backgroundColor: 'white',
+                                    cursor: 'text',
+                                }}
+                                placeholder={`${Math.round(scale * 100)}%`}
+                                title="Click to enter zoom percentage (50-300), press Enter to apply"
+                            />
 
                             <button
                                 onClick={() => handleZoom(Math.min(3, scale + 0.25))}
@@ -1065,7 +1120,6 @@ const PDFHighlighter = () => {
                                         overflow: 'hidden',
                                     }}
                                 >
-                                    {/* Page Number Badge */}
                                     <div style={{
                                         position: 'absolute',
                                         top: '-10px',
@@ -1085,9 +1139,7 @@ const PDFHighlighter = () => {
                                         ref={(el) => {
                                             if (el) canvasRefs.current.set(pageNum, el);
                                         }}
-                                        style={{
-                                            display: 'block',
-                                        }}
+                                        style={{ display: 'block' }}
                                     />
                                     <div
                                         ref={(el) => {
