@@ -1,4 +1,4 @@
-﻿// Enhanced PDF Viewer with Direct Text Highlighting
+﻿// Enhanced PDF Viewer with Direct Text Highlighting - FIXED VERSION
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Highlighter, Trash2, Download, Search, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Copy, Palette } from 'lucide-react';
 
@@ -34,7 +34,6 @@ const PDFHighlighter = () => {
     const [highlights, setHighlights] = useState<Highlight[]>([]);
     const [selectedColor, setSelectedColor] = useState('#fbbf24');
     const [selectedBackground, setSelectedBackground] = useState('#fef3c7');
-    const [isHighlighting, setIsHighlighting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [selectedText, setSelectedText] = useState('');
@@ -138,21 +137,26 @@ const PDFHighlighter = () => {
                 textDivs: [],
             });
 
-            // Render existing highlights for this page
-            renderHighlights(pageNum);
+            // Render existing highlights for this page immediately
+            setTimeout(() => renderHighlights(pageNum), 200);
         } catch (error) {
             console.error('Error rendering page:', error);
         }
     };
 
-    // Render highlights
-    const renderHighlights = (pageNum: number) => {
+    // Render highlights - Force re-render with current highlights state
+    const renderHighlights = useCallback((pageNum: number, highlightsToRender?: Highlight[]) => {
         if (!highlightLayerRef.current) return;
 
         const layer = highlightLayerRef.current;
-        layer.innerHTML = '';
+        // Force clear the layer
+        while (layer.firstChild) {
+            layer.removeChild(layer.firstChild);
+        }
 
-        const pageHighlights = highlights.filter(h => h.pageNumber === pageNum);
+        // Use provided highlights or current state
+        const currentHighlights = highlightsToRender || highlights;
+        const pageHighlights = currentHighlights.filter(h => h.pageNumber === pageNum);
 
         pageHighlights.forEach(highlight => {
             if (highlight.position) {
@@ -165,46 +169,17 @@ const PDFHighlighter = () => {
                 highlightDiv.style.backgroundColor = highlight.background;
                 highlightDiv.style.opacity = '0.4';
                 highlightDiv.style.pointerEvents = 'none';
+                highlightDiv.style.borderRadius = '2px';
+                highlightDiv.className = 'pdf-highlight';
                 layer.appendChild(highlightDiv);
             }
         });
-    };
+    }, [highlights]);
 
-    // Handle text selection
-    useEffect(() => {
-        const handleSelection = () => {
-            if (!isHighlighting) return;
+    // Create highlight function - Fixed to immediately render
+    const createHighlight = useCallback((text: string, color: string, background: string) => {
+        if (!text || text.length < 2) return;
 
-            const selection = window.getSelection();
-            const text = selection?.toString().trim();
-
-            if (text && text.length > 2) {
-                setSelectedText(text);
-
-                // Auto-highlight after a brief delay
-                setTimeout(() => {
-                    if (window.getSelection()?.toString().trim() === text) {
-                        createHighlight(text);
-                        window.getSelection()?.removeAllRanges();
-                    }
-                }, 500);
-            }
-        };
-
-        document.addEventListener('mouseup', handleSelection);
-        document.addEventListener('touchend', handleSelection);
-
-        return () => {
-            document.removeEventListener('mouseup', handleSelection);
-            document.removeEventListener('touchend', handleSelection);
-        };
-    }, [isHighlighting, selectedColor, selectedBackground, currentPage]);
-
-    // Create highlight
-    const createHighlight = (text: string) => {
-        if (!text || text.length < 3) return;
-
-        // Get selection position
         const selection = window.getSelection();
         if (!selection || selection.rangeCount === 0) return;
 
@@ -224,21 +199,58 @@ const PDFHighlighter = () => {
         }
 
         const newHighlight: Highlight = {
-            id: Date.now().toString(),
+            id: Date.now().toString() + Math.random().toString(36),
             text: text.trim(),
-            color: selectedColor,
-            background: selectedBackground,
+            color: color,
+            background: background,
             pageNumber: currentPage,
             position,
             created: new Date().toLocaleTimeString(),
         };
 
-        setHighlights(prev => [...prev, newHighlight]);
+        // Update highlights state
+        const updatedHighlights = [...highlights, newHighlight];
+        setHighlights(updatedHighlights);
+
+        // Force immediate re-render with the new highlights
+        renderHighlights(currentPage, updatedHighlights);
+
         showToast(`Highlighted: "${text.substring(0, 30)}${text.length > 30 ? '...' : ''}"`);
 
-        // Re-render highlights
-        renderHighlights(currentPage);
-    };
+        // Clear selection
+        selection.removeAllRanges();
+    }, [currentPage, highlights, renderHighlights]);
+
+    // Handle color selection - this now creates the highlight
+    const handleColorSelection = useCallback((color: ColorOption) => {
+        setSelectedColor(color.value);
+        setSelectedBackground(color.bg);
+
+        // Get current selection and create highlight immediately
+        const selection = window.getSelection();
+        const text = selection?.toString().trim();
+
+        if (text && text.length > 2) {
+            createHighlight(text, color.value, color.bg);
+        }
+    }, [createHighlight]);
+
+    // Handle text selection for preview
+    useEffect(() => {
+        const handleSelection = () => {
+            const selection = window.getSelection();
+            const text = selection?.toString().trim();
+            setSelectedText(text || '');
+        };
+
+        document.addEventListener('mouseup', handleSelection);
+        document.addEventListener('touchend', handleSelection);
+
+        return () => {
+            document.removeEventListener('mouseup', handleSelection);
+            document.removeEventListener('touchend', handleSelection);
+        };
+    }, []);
 
     // Toast notification
     const showToast = (message: string) => {
@@ -303,6 +315,14 @@ const PDFHighlighter = () => {
 
         showToast(`Exported ${highlights.length} highlights`);
     };
+
+    // Delete highlight - Fixed to immediately update display
+    const deleteHighlight = useCallback((highlightId: string) => {
+        const updatedHighlights = highlights.filter(h => h.id !== highlightId);
+        setHighlights(updatedHighlights);
+        // Force immediate re-render with updated highlights
+        renderHighlights(currentPage, updatedHighlights);
+    }, [currentPage, highlights, renderHighlights]);
 
     // Filter highlights
     const filteredHighlights = highlights.filter(h =>
@@ -401,39 +421,21 @@ const PDFHighlighter = () => {
                         <Highlighter size={20} />
                         Highlights ({highlights.length})
                     </h3>
-
-                    <button
-                        onClick={() => setIsHighlighting(!isHighlighting)}
-                        style={{
-                            width: '100%',
-                            padding: '0.75rem',
-                            backgroundColor: isHighlighting ? '#ef4444' : '#10b981',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '0.5rem',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.5rem',
-                        }}
-                    >
-                        <Highlighter size={16} />
-                        {isHighlighting ? 'Stop Highlighting' : 'Start Highlighting'}
-                    </button>
                 </div>
 
-                {/* Status */}
-                {isHighlighting && (
+                {/* Selection Status */}
+                {selectedText && (
                     <div style={{
                         padding: '1rem 1.5rem',
-                        backgroundColor: '#fef3c7',
-                        borderBottom: '1px solid #fbbf24',
+                        backgroundColor: '#f0f9ff',
+                        borderBottom: '1px solid #3b82f6',
                         fontSize: '0.875rem',
-                        color: '#92400e',
+                        color: '#1e40af',
                     }}>
-                        <strong>🎯 Active:</strong> Select text to highlight
+                        <strong>Selected:</strong> "{selectedText.substring(0, 50)}{selectedText.length > 50 ? '...' : ''}"
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}>
+                            👆 Click a color below to highlight
+                        </div>
                     </div>
                 )}
 
@@ -446,28 +448,28 @@ const PDFHighlighter = () => {
                         marginBottom: '0.75rem',
                         display: 'block',
                     }}>
-                        Highlight Color:
+                        {selectedText ? 'Choose Highlight Color:' : 'Highlight Colors:'}
                     </label>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
                         {colors.map((color) => (
                             <button
                                 key={color.name}
-                                onClick={() => {
-                                    setSelectedColor(color.value);
-                                    setSelectedBackground(color.bg);
-                                }}
+                                onClick={() => handleColorSelection(color)}
+                                disabled={!selectedText}
                                 style={{
                                     width: '48px',
                                     height: '48px',
                                     borderRadius: '0.5rem',
                                     backgroundColor: color.bg,
                                     border: selectedColor === color.value ? `3px solid ${color.value}` : '2px solid #e5e7eb',
-                                    cursor: 'pointer',
+                                    cursor: selectedText ? 'pointer' : 'not-allowed',
+                                    opacity: selectedText ? 1 : 0.5,
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
+                                    transition: 'all 0.2s',
                                 }}
-                                title={color.name}
+                                title={selectedText ? `Highlight with ${color.name}` : `Select text first - ${color.name}`}
                             >
                                 <div style={{
                                     width: '20px',
@@ -521,8 +523,10 @@ const PDFHighlighter = () => {
 
                         <button
                             onClick={() => {
+                                // Clear all highlights immediately
                                 setHighlights([]);
-                                renderHighlights(currentPage);
+                                renderHighlights(currentPage, []);
+                                showToast('All highlights cleared');
                             }}
                             disabled={highlights.length === 0}
                             style={{
@@ -554,7 +558,15 @@ const PDFHighlighter = () => {
                             padding: '2rem',
                             color: '#9ca3af',
                         }}>
-                            {highlights.length === 0 ? 'No highlights yet' : 'No matching highlights'}
+                            {highlights.length === 0 ? (
+                                <div>
+                                    <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>✨</div>
+                                    <div>No highlights yet</div>
+                                    <div style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                                        Select text and click a color to start
+                                    </div>
+                                </div>
+                            ) : 'No matching highlights'}
                         </div>
                     ) : (
                         filteredHighlights.map((highlight, index) => (
@@ -569,13 +581,19 @@ const PDFHighlighter = () => {
                                     borderRadius: '0.375rem',
                                     cursor: 'pointer',
                                     position: 'relative',
+                                    transition: 'transform 0.1s',
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(-1px)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0)';
                                 }}
                             >
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        setHighlights(prev => prev.filter(h => h.id !== highlight.id));
-                                        renderHighlights(currentPage);
+                                        deleteHighlight(highlight.id);
                                     }}
                                     style={{
                                         position: 'absolute',
@@ -609,9 +627,10 @@ const PDFHighlighter = () => {
                                     fontSize: '0.875rem',
                                     color: '#1f2937',
                                     paddingRight: '2rem',
+                                    lineHeight: '1.4',
                                 }}>
-                                    "{highlight.text.substring(0, 100)}
-                                    {highlight.text.length > 100 ? '...' : ''}"
+                                    "{highlight.text.substring(0, 150)}
+                                    {highlight.text.length > 150 ? '...' : ''}"
                                 </div>
                             </div>
                         ))
@@ -737,7 +756,7 @@ const PDFHighlighter = () => {
                             position: 'relative',
                             backgroundColor: 'white',
                             boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                            userSelect: isHighlighting ? 'text' : 'none',
+                            userSelect: 'text',
                         }}>
                             <canvas
                                 ref={canvasRef}
@@ -757,8 +776,8 @@ const PDFHighlighter = () => {
                                     overflow: 'hidden',
                                     opacity: 0.2,
                                     lineHeight: 1,
-                                    userSelect: isHighlighting ? 'text' : 'none',
-                                    cursor: isHighlighting ? 'text' : 'default',
+                                    userSelect: 'text',
+                                    cursor: 'text',
                                 }}
                             />
                             <div
