@@ -10,10 +10,10 @@ interface Highlight {
     background: string;
     pageNumber: number;
     position?: {
-        x: number;
-        y: number;
-        width: number;
-        height: number;
+        x: number; // Now stored as percentage of canvas width (0-1)
+        y: number; // Now stored as percentage of canvas height (0-1)
+        width: number; // Now stored as percentage of canvas width (0-1)
+        height: number; // Now stored as percentage of canvas height (0-1)
     };
     created: string;
 }
@@ -197,10 +197,12 @@ const PDFHighlighter = () => {
         }
     };
 
-    // Render highlights - Force re-render with current highlights state
+    // Render highlights - Convert relative positions to absolute pixels based on current scale
     const renderHighlights = useCallback((pageNum: number, highlightsToRender?: Highlight[]) => {
         const highlightLayer = highlightLayerRefs.current.get(pageNum);
-        if (!highlightLayer) return;
+        const canvas = canvasRefs.current.get(pageNum);
+
+        if (!highlightLayer || !canvas) return;
 
         while (highlightLayer.firstChild) {
             highlightLayer.removeChild(highlightLayer.firstChild);
@@ -212,12 +214,22 @@ const PDFHighlighter = () => {
         pageHighlights.forEach(highlight => {
             if (highlight.position) {
                 const highlightDiv = document.createElement('div');
+
+                // Convert relative positions back to absolute pixels based on current canvas size
+                const canvasWidth = canvas.width;
+                const canvasHeight = canvas.height;
+
+                const absoluteX = highlight.position.x * canvasWidth;
+                const absoluteY = highlight.position.y * canvasHeight;
+                const absoluteWidth = highlight.position.width * canvasWidth;
+                const absoluteHeight = highlight.position.height * canvasHeight;
+
                 Object.assign(highlightDiv.style, {
                     position: 'absolute',
-                    left: highlight.position.x + 'px',
-                    top: highlight.position.y + 'px',
-                    width: highlight.position.width + 'px',
-                    height: highlight.position.height + 'px',
+                    left: absoluteX + 'px',
+                    top: absoluteY + 'px',
+                    width: absoluteWidth + 'px',
+                    height: absoluteHeight + 'px',
                     backgroundColor: highlight.background,
                     opacity: '0.4',
                     pointerEvents: 'none',
@@ -229,7 +241,7 @@ const PDFHighlighter = () => {
         });
     }, [highlights]);
 
-    // Create highlight function
+    // Create highlight function - Store relative positions that scale properly
     const createHighlight = useCallback((text: string, color: string, background: string) => {
         if (!text || text.length < 2) return;
 
@@ -254,12 +266,20 @@ const PDFHighlighter = () => {
         let position = undefined;
         if (textLayer) {
             const textLayerRect = textLayer.getBoundingClientRect();
-            position = {
-                x: rect.left - textLayerRect.left,
-                y: rect.top - textLayerRect.top,
-                width: rect.width,
-                height: rect.height,
-            };
+            const canvas = canvasRefs.current.get(selectedPageNum);
+
+            if (canvas) {
+                // Store positions as percentages of the canvas size for proper scaling
+                const canvasWidth = canvas.width;
+                const canvasHeight = canvas.height;
+
+                position = {
+                    x: (rect.left - textLayerRect.left) / canvasWidth,
+                    y: (rect.top - textLayerRect.top) / canvasHeight,
+                    width: rect.width / canvasWidth,
+                    height: rect.height / canvasHeight,
+                };
+            }
         }
 
         const newHighlight: Highlight = {
@@ -409,43 +429,79 @@ const PDFHighlighter = () => {
         }
     };
 
-    // Zoom - Re-render ALL pages that exist when zoom changes
+    // Zoom - Re-render pages more aggressively to handle zoom out scenario
     const handleZoom = (newScale: number) => {
         setScale(newScale);
         setZoomInputValue('');
 
         if (pdfDoc) {
-            // Clear rendered pages to force re-render at new scale
+            // Clear ALL rendered pages to force complete re-render at new scale
             setRenderedPages(new Set());
 
-            // Get currently visible pages and render them immediately
             const container = scrollContainerRef.current;
-            const visiblePages = [];
+            let pagesToRender = [];
 
             if (container) {
                 const containerRect = container.getBoundingClientRect();
+                const containerHeight = containerRect.height;
 
+                // Get a wider range of pages around the current visible area
+                // This handles zoom out where more pages become visible
                 for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
                     const pageContainer = pageContainerRefs.current.get(pageNum);
                     if (pageContainer) {
                         const pageRect = pageContainer.getBoundingClientRect();
 
-                        // If page is even partially visible
-                        if (pageRect.bottom >= containerRect.top && pageRect.top <= containerRect.bottom) {
-                            visiblePages.push(pageNum);
+                        // Expand the visibility check - include pages that are close to viewport
+                        const buffer = containerHeight * 0.5; // 50% buffer above and below viewport
+                        if (pageRect.bottom >= (containerRect.top - buffer) &&
+                            pageRect.top <= (containerRect.bottom + buffer)) {
+                            pagesToRender.push(pageNum);
+                        }
+                    }
+                }
+
+                // If zoom is getting smaller (zooming out), be even more aggressive
+                // and render a larger range around current page
+                if (newScale < scale) {
+                    const extraRange = Math.max(3, Math.ceil(5 / newScale)); // More pages for smaller zoom
+                    const start = Math.max(1, currentPage - extraRange);
+                    const end = Math.min(totalPages, currentPage + extraRange);
+
+                    for (let i = start; i <= end; i++) {
+                        if (!pagesToRender.includes(i)) {
+                            pagesToRender.push(i);
                         }
                     }
                 }
             }
 
-            // If no visible pages detected, fall back to current page
-            if (visiblePages.length === 0) {
-                visiblePages.push(currentPage);
+            // If no pages detected, fall back to a range around current page
+            if (pagesToRender.length === 0) {
+                const range = Math.max(3, Math.ceil(3 / newScale));
+                const start = Math.max(1, currentPage - range);
+                const end = Math.min(totalPages, currentPage + range);
+
+                for (let i = start; i <= end; i++) {
+                    pagesToRender.push(i);
+                }
             }
 
-            // Render visible pages immediately
-            visiblePages.forEach(pageNum => {
-                renderPage(pdfDoc, pageNum);
+            // Sort pages and render them
+            pagesToRender.sort((a, b) => a - b);
+
+            // Render current page first for immediate feedback
+            if (pagesToRender.includes(currentPage)) {
+                renderPage(pdfDoc, currentPage);
+            }
+
+            // Then render other pages with a small delay to avoid blocking
+            pagesToRender.forEach((pageNum, index) => {
+                if (pageNum !== currentPage) {
+                    setTimeout(() => {
+                        renderPage(pdfDoc, pageNum);
+                    }, index * 50); // 50ms delay between each page
+                }
             });
         }
     };
