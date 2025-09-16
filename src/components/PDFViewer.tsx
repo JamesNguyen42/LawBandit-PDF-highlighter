@@ -38,6 +38,8 @@ const PDFHighlighter = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [selectedText, setSelectedText] = useState('');
     const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set());
+    const [customColors, setCustomColors] = useState<ColorOption[]>([]);
+    const [showColorPicker, setShowColorPicker] = useState(false);
 
     // Refs
     const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -47,8 +49,8 @@ const PDFHighlighter = () => {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const pageContainerRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
-    // Color options
-    const colors: ColorOption[] = [
+    // Color options with ability to add custom colors
+    const defaultColors: ColorOption[] = [
         { name: 'Yellow', value: '#fbbf24', bg: '#fef3c7' },
         { name: 'Blue', value: '#3b82f6', bg: '#dbeafe' },
         { name: 'Green', value: '#10b981', bg: '#d1fae5' },
@@ -56,6 +58,61 @@ const PDFHighlighter = () => {
         { name: 'Purple', value: '#8b5cf6', bg: '#ede9fe' },
         { name: 'Orange', value: '#f97316', bg: '#fed7aa' },
     ];
+
+    // All colors (default + custom)
+    const allColors = [...defaultColors, ...customColors];
+
+    // Helper function to generate background color from main color
+    const generateBackgroundColor = (mainColor: string) => {
+        // Convert hex to RGB
+        const hex = mainColor.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+
+        // Create a lighter version (increase brightness)
+        const lighten = (color: number) => Math.min(255, Math.floor(color + (255 - color) * 0.7));
+
+        const lightR = lighten(r);
+        const lightG = lighten(g);
+        const lightB = lighten(b);
+
+        return `rgb(${lightR}, ${lightG}, ${lightB})`;
+    };
+
+    // Add custom color
+    const addCustomColor = (colorHex: string) => {
+        const backgroundColor = generateBackgroundColor(colorHex);
+        const colorName = `Custom ${customColors.length + 1}`;
+
+        const newColor: ColorOption = {
+            name: colorName,
+            value: colorHex,
+            bg: backgroundColor,
+        };
+
+        setCustomColors(prev => [...prev, newColor]);
+        setShowColorPicker(false);
+
+        // Auto-select the new color
+        setSelectedColor(colorHex);
+        setSelectedBackground(backgroundColor);
+
+        showToast(`Added custom color: ${colorHex}`);
+    };
+
+    // Remove custom color
+    const removeCustomColor = (colorValue: string) => {
+        setCustomColors(prev => prev.filter(color => color.value !== colorValue));
+
+        // If we're removing the currently selected color, switch to yellow
+        if (selectedColor === colorValue) {
+            setSelectedColor('#fbbf24');
+            setSelectedBackground('#fef3c7');
+        }
+
+        showToast('Custom color removed');
+    };
 
     // Load PDF.js
     useEffect(() => {
@@ -388,7 +445,7 @@ const PDFHighlighter = () => {
         }
     };
 
-    // Export highlights
+    // Export highlights - Enhanced with color information
     const exportHighlights = () => {
         if (highlights.length === 0) {
             showToast('No highlights to export');
@@ -398,6 +455,7 @@ const PDFHighlighter = () => {
         const data = {
             filename: file?.name,
             highlights: highlights,
+            customColors: customColors, // Include custom colors in export
             totalPages: totalPages,
             exported: new Date().toISOString(),
         };
@@ -410,7 +468,7 @@ const PDFHighlighter = () => {
         a.click();
         URL.revokeObjectURL(url);
 
-        showToast(`Exported ${highlights.length} highlights`);
+        showToast(`Exported ${highlights.length} highlights + ${customColors.length} custom colors`);
     };
 
     // Delete highlight - Fixed to immediately update display
@@ -541,45 +599,169 @@ const PDFHighlighter = () => {
 
                 {/* Color Picker */}
                 <div style={{ padding: '1.5rem', borderBottom: '1px solid #e5e7eb' }}>
-                    <label style={{
-                        fontSize: '0.875rem',
-                        fontWeight: '600',
-                        color: '#374151',
-                        marginBottom: '0.75rem',
-                        display: 'block',
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '0.75rem'
                     }}>
-                        {selectedText ? 'Choose Highlight Color:' : 'Highlight Colors:'}
-                    </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
-                        {colors.map((color) => (
-                            <button
-                                key={color.name}
-                                onClick={() => handleColorSelection(color)}
-                                disabled={!selectedText}
-                                style={{
-                                    width: '48px',
-                                    height: '48px',
-                                    borderRadius: '0.5rem',
-                                    backgroundColor: color.bg,
-                                    border: selectedColor === color.value ? `3px solid ${color.value}` : '2px solid #e5e7eb',
-                                    cursor: selectedText ? 'pointer' : 'not-allowed',
-                                    opacity: selectedText ? 1 : 0.5,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    transition: 'all 0.2s',
-                                }}
-                                title={selectedText ? `Highlight with ${color.name}` : `Select text first - ${color.name}`}
-                            >
-                                <div style={{
-                                    width: '20px',
-                                    height: '4px',
-                                    backgroundColor: color.value,
-                                    borderRadius: '2px',
-                                }} />
-                            </button>
-                        ))}
+                        <label style={{
+                            fontSize: '0.875rem',
+                            fontWeight: '600',
+                            color: '#374151',
+                        }}>
+                            {selectedText ? 'Choose Highlight Color:' : 'Highlight Colors:'}
+                        </label>
+
+                        <button
+                            onClick={() => setShowColorPicker(!showColorPicker)}
+                            style={{
+                                padding: '0.25rem 0.5rem',
+                                fontSize: '0.75rem',
+                                backgroundColor: '#f3f4f6',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '0.375rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                            }}
+                        >
+                            <Palette size={12} />
+                            Add Color
+                        </button>
                     </div>
+
+                    {/* Custom Color Picker */}
+                    {showColorPicker && (
+                        <div style={{
+                            padding: '1rem',
+                            backgroundColor: '#f9fafb',
+                            borderRadius: '0.5rem',
+                            marginBottom: '1rem',
+                            border: '1px solid #e5e7eb',
+                        }}>
+                            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: '#374151' }}>
+                                Pick a custom color:
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <input
+                                    type="color"
+                                    style={{
+                                        width: '40px',
+                                        height: '40px',
+                                        border: 'none',
+                                        borderRadius: '0.375rem',
+                                        cursor: 'pointer',
+                                    }}
+                                    onChange={(e) => {
+                                        const color = e.target.value;
+                                        addCustomColor(color);
+                                    }}
+                                />
+                                <button
+                                    onClick={() => setShowColorPicker(false)}
+                                    style={{
+                                        padding: '0.25rem 0.5rem',
+                                        fontSize: '0.75rem',
+                                        backgroundColor: '#6b7280',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '0.25rem',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Color Grid */}
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: '0.5rem',
+                        maxHeight: '200px',
+                        overflowY: 'auto',
+                    }}>
+                        {allColors.map((color, index) => {
+                            const isCustom = index >= defaultColors.length;
+                            return (
+                                <div key={color.value} style={{ position: 'relative' }}>
+                                    <button
+                                        onClick={() => handleColorSelection(color)}
+                                        disabled={!selectedText}
+                                        style={{
+                                            width: '48px',
+                                            height: '48px',
+                                            borderRadius: '0.5rem',
+                                            backgroundColor: color.bg,
+                                            border: selectedColor === color.value ? `3px solid ${color.value}` : '2px solid #e5e7eb',
+                                            cursor: selectedText ? 'pointer' : 'not-allowed',
+                                            opacity: selectedText ? 1 : 0.5,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'all 0.2s',
+                                            position: 'relative',
+                                        }}
+                                        title={selectedText ? `Highlight with ${color.name}` : `Select text first - ${color.name}`}
+                                    >
+                                        <div style={{
+                                            width: '20px',
+                                            height: '4px',
+                                            backgroundColor: color.value,
+                                            borderRadius: '2px',
+                                        }} />
+                                    </button>
+
+                                    {/* Remove button for custom colors */}
+                                    {isCustom && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                removeCustomColor(color.value);
+                                            }}
+                                            style={{
+                                                position: 'absolute',
+                                                top: '-4px',
+                                                right: '-4px',
+                                                width: '16px',
+                                                height: '16px',
+                                                borderRadius: '50%',
+                                                backgroundColor: '#ef4444',
+                                                color: 'white',
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                                fontSize: '10px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
+                                            }}
+                                            title={`Remove ${color.name}`}
+                                        >
+                                            ×
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {customColors.length > 0 && (
+                        <div style={{
+                            marginTop: '0.75rem',
+                            fontSize: '0.75rem',
+                            color: '#6b7280',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                        }}>
+                            💡 Custom colors have × button to remove
+                        </div>
+                    )}
                 </div>
 
                 {/* Actions */}
