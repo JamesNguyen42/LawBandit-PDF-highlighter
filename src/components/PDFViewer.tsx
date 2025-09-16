@@ -37,12 +37,15 @@ const PDFHighlighter = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [selectedText, setSelectedText] = useState('');
+    const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set());
 
     // Refs
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const textLayerRef = useRef<HTMLDivElement>(null);
+    const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
+    const textLayerRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+    const highlightLayerRefs = useRef<Map<number, HTMLDivElement>>(new Map());
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const highlightLayerRef = useRef<HTMLDivElement>(null);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const pageContainerRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
     // Color options
     const colors: ColorOption[] = [
@@ -79,6 +82,7 @@ const PDFHighlighter = () => {
 
         setFile(uploadedFile);
         setIsLoading(true);
+        setRenderedPages(new Set());
 
         try {
             const arrayBuffer = await uploadedFile.arrayBuffer();
@@ -89,8 +93,10 @@ const PDFHighlighter = () => {
             setTotalPages(pdf.numPages);
             setCurrentPage(1);
 
-            // Render first page
+            // Render first few pages
             renderPage(pdf, 1);
+            if (pdf.numPages > 1) renderPage(pdf, 2);
+            if (pdf.numPages > 2) renderPage(pdf, 3);
         } catch (error) {
             console.error('Error loading PDF:', error);
             alert('Error loading PDF file');
@@ -101,13 +107,17 @@ const PDFHighlighter = () => {
 
     // Render PDF page
     const renderPage = async (pdf: any, pageNum: number) => {
-        if (!pdf || !canvasRef.current || !textLayerRef.current) return;
+        if (!pdf || renderedPages.has(pageNum)) return;
 
         try {
             const page = await pdf.getPage(pageNum);
             const viewport = page.getViewport({ scale });
 
-            const canvas = canvasRef.current;
+            const canvas = canvasRefs.current.get(pageNum);
+            const textLayer = textLayerRefs.current.get(pageNum);
+
+            if (!canvas || !textLayer) return;
+
             const context = canvas.getContext('2d');
             canvas.height = viewport.height;
             canvas.width = viewport.width;
@@ -122,7 +132,6 @@ const PDFHighlighter = () => {
 
             // Render text layer for selection
             const textContent = await page.getTextContent();
-            const textLayer = textLayerRef.current;
 
             // Clear previous text layer
             textLayer.innerHTML = '';
@@ -137,7 +146,10 @@ const PDFHighlighter = () => {
                 textDivs: [],
             });
 
-            // Render existing highlights for this page immediately
+            // Mark as rendered
+            setRenderedPages(prev => new Set([...prev, pageNum]));
+
+            // Render existing highlights for this page
             setTimeout(() => renderHighlights(pageNum), 200);
         } catch (error) {
             console.error('Error rendering page:', error);
@@ -146,12 +158,12 @@ const PDFHighlighter = () => {
 
     // Render highlights - Force re-render with current highlights state
     const renderHighlights = useCallback((pageNum: number, highlightsToRender?: Highlight[]) => {
-        if (!highlightLayerRef.current) return;
+        const highlightLayer = highlightLayerRefs.current.get(pageNum);
+        if (!highlightLayer) return;
 
-        const layer = highlightLayerRef.current;
         // Force clear the layer
-        while (layer.firstChild) {
-            layer.removeChild(layer.firstChild);
+        while (highlightLayer.firstChild) {
+            highlightLayer.removeChild(highlightLayer.firstChild);
         }
 
         // Use provided highlights or current state
@@ -171,7 +183,7 @@ const PDFHighlighter = () => {
                 highlightDiv.style.pointerEvents = 'none';
                 highlightDiv.style.borderRadius = '2px';
                 highlightDiv.className = 'pdf-highlight';
-                layer.appendChild(highlightDiv);
+                highlightLayer.appendChild(highlightDiv);
             }
         });
     }, [highlights]);
@@ -185,7 +197,20 @@ const PDFHighlighter = () => {
 
         const range = selection.getRangeAt(0);
         const rect = range.getBoundingClientRect();
-        const textLayer = textLayerRef.current;
+
+        // Find which text layer this selection is in
+        let selectedPageNum = currentPage;
+        let textLayer = textLayerRefs.current.get(currentPage);
+
+        // Check if selection is in a different page's text layer
+        for (let [pageNum, layer] of textLayerRefs.current) {
+            const layerRect = layer.getBoundingClientRect();
+            if (rect.top >= layerRect.top && rect.bottom <= layerRect.bottom) {
+                selectedPageNum = pageNum;
+                textLayer = layer;
+                break;
+            }
+        }
 
         let position = undefined;
         if (textLayer) {
@@ -203,7 +228,7 @@ const PDFHighlighter = () => {
             text: text.trim(),
             color: color,
             background: background,
-            pageNumber: currentPage,
+            pageNumber: selectedPageNum,
             position,
             created: new Date().toLocaleTimeString(),
         };
@@ -213,7 +238,7 @@ const PDFHighlighter = () => {
         setHighlights(updatedHighlights);
 
         // Force immediate re-render with the new highlights
-        renderHighlights(currentPage, updatedHighlights);
+        renderHighlights(selectedPageNum, updatedHighlights);
 
         showToast(`Highlighted: "${text.substring(0, 30)}${text.length > 30 ? '...' : ''}"`);
 
@@ -276,18 +301,90 @@ const PDFHighlighter = () => {
         }, 3000);
     };
 
-    // Navigation
+    // Scroll handling for page navigation
+    const handleScroll = useCallback(() => {
+        if (!scrollContainerRef.current || !pdfDoc) return;
+
+        const container = scrollContainerRef.current;
+        const scrollTop = container.scrollTop;
+        const containerHeight = container.clientHeight;
+
+        // Find which page is most visible
+        let mostVisiblePage = 1;
+        let maxVisibleHeight = 0;
+
+        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+            const pageContainer = pageContainerRefs.current.get(pageNum);
+            if (!pageContainer) continue;
+
+            const pageRect = pageContainer.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+
+            // Calculate visible portion of this page
+            const pageTop = pageRect.top - containerRect.top;
+            const pageBottom = pageRect.bottom - containerRect.top;
+
+            const visibleTop = Math.max(0, pageTop);
+            const visibleBottom = Math.min(containerHeight, pageBottom);
+            const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+
+            if (visibleHeight > maxVisibleHeight) {
+                maxVisibleHeight = visibleHeight;
+                mostVisiblePage = pageNum;
+            }
+        }
+
+        if (mostVisiblePage !== currentPage) {
+            setCurrentPage(mostVisiblePage);
+        }
+
+        // Lazy load nearby pages
+        for (let i = Math.max(1, mostVisiblePage - 1); i <= Math.min(totalPages, mostVisiblePage + 1); i++) {
+            if (!renderedPages.has(i)) {
+                renderPage(pdfDoc, i);
+            }
+        }
+    }, [currentPage, totalPages, pdfDoc, renderedPages, renderPage]);
+
+    // Add scroll listener
+    useEffect(() => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+
+        container.addEventListener('scroll', handleScroll);
+        return () => container.removeEventListener('scroll', handleScroll);
+    }, [handleScroll]);
+
+    // Navigation with smooth scrolling
     const goToPage = (pageNum: number) => {
-        if (pageNum < 1 || pageNum > totalPages || !pdfDoc) return;
+        if (pageNum < 1 || pageNum > totalPages) return;
+
+        const pageContainer = pageContainerRefs.current.get(pageNum);
+        const scrollContainer = scrollContainerRef.current;
+
+        if (pageContainer && scrollContainer) {
+            const containerRect = scrollContainer.getBoundingClientRect();
+            const pageRect = pageContainer.getBoundingClientRect();
+            const scrollTop = scrollContainer.scrollTop + (pageRect.top - containerRect.top) - 20; // 20px offset
+
+            scrollContainer.scrollTo({
+                top: scrollTop,
+                behavior: 'smooth'
+            });
+        }
+
         setCurrentPage(pageNum);
-        renderPage(pdfDoc, pageNum);
     };
 
-    // Zoom
+    // Zoom - Re-render all visible pages
     const handleZoom = (newScale: number) => {
         setScale(newScale);
+        setRenderedPages(new Set()); // Clear rendered pages to force re-render
         if (pdfDoc) {
-            renderPage(pdfDoc, currentPage);
+            // Re-render current and nearby pages
+            for (let i = Math.max(1, currentPage - 1); i <= Math.min(totalPages, currentPage + 1); i++) {
+                renderPage(pdfDoc, i);
+            }
         }
     };
 
@@ -318,11 +415,14 @@ const PDFHighlighter = () => {
 
     // Delete highlight - Fixed to immediately update display
     const deleteHighlight = useCallback((highlightId: string) => {
+        const highlightToDelete = highlights.find(h => h.id === highlightId);
         const updatedHighlights = highlights.filter(h => h.id !== highlightId);
         setHighlights(updatedHighlights);
-        // Force immediate re-render with updated highlights
-        renderHighlights(currentPage, updatedHighlights);
-    }, [currentPage, highlights, renderHighlights]);
+        // Force immediate re-render with updated highlights on the correct page
+        if (highlightToDelete) {
+            renderHighlights(highlightToDelete.pageNumber, updatedHighlights);
+        }
+    }, [highlights, renderHighlights]);
 
     // Filter highlights
     const filteredHighlights = highlights.filter(h =>
@@ -523,9 +623,12 @@ const PDFHighlighter = () => {
 
                         <button
                             onClick={() => {
-                                // Clear all highlights immediately
+                                // Clear all highlights immediately from all pages
                                 setHighlights([]);
-                                renderHighlights(currentPage, []);
+                                // Re-render all currently visible pages
+                                for (let pageNum of renderedPages) {
+                                    renderHighlights(pageNum, []);
+                                }
                                 showToast('All highlights cleared');
                             }}
                             disabled={highlights.length === 0}
@@ -738,59 +841,105 @@ const PDFHighlighter = () => {
                     </div>
                 </div>
 
-                {/* PDF Canvas */}
-                <div style={{
-                    flex: 1,
-                    overflow: 'auto',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    padding: '2rem',
-                    backgroundColor: '#e5e7eb',
-                }}>
+                {/* PDF Canvas - Scrollable Multi-Page */}
+                <div
+                    ref={scrollContainerRef}
+                    style={{
+                        flex: 1,
+                        overflow: 'auto',
+                        backgroundColor: '#e5e7eb',
+                        padding: '2rem',
+                    }}
+                >
                     {isLoading ? (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            minHeight: '400px'
+                        }}>
                             <div style={{ fontSize: '1.25rem', color: '#6b7280' }}>Loading PDF...</div>
                         </div>
                     ) : (
                         <div style={{
-                            position: 'relative',
-                            backgroundColor: 'white',
-                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                            userSelect: 'text',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '2rem'
                         }}>
-                            <canvas
-                                ref={canvasRef}
-                                style={{
-                                    display: 'block',
-                                }}
-                            />
-                            <div
-                                ref={textLayerRef}
-                                className="textLayer"
-                                style={{
-                                    position: 'absolute',
-                                    left: 0,
-                                    top: 0,
-                                    right: 0,
-                                    bottom: 0,
-                                    overflow: 'hidden',
-                                    opacity: 0.2,
-                                    lineHeight: 1,
-                                    userSelect: 'text',
-                                    cursor: 'text',
-                                }}
-                            />
-                            <div
-                                ref={highlightLayerRef}
-                                style={{
-                                    position: 'absolute',
-                                    left: 0,
-                                    top: 0,
-                                    right: 0,
-                                    bottom: 0,
-                                    pointerEvents: 'none',
-                                }}
-                            />
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
+                                <div
+                                    key={pageNum}
+                                    ref={(el) => {
+                                        if (el) pageContainerRefs.current.set(pageNum, el);
+                                    }}
+                                    style={{
+                                        position: 'relative',
+                                        backgroundColor: 'white',
+                                        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                                        userSelect: 'text',
+                                        border: currentPage === pageNum ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                                        borderRadius: '4px',
+                                        overflow: 'hidden',
+                                    }}
+                                >
+                                    {/* Page Number Badge */}
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '-10px',
+                                        left: '20px',
+                                        backgroundColor: currentPage === pageNum ? '#3b82f6' : '#6b7280',
+                                        color: 'white',
+                                        padding: '4px 12px',
+                                        borderRadius: '12px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: '600',
+                                        zIndex: 10,
+                                    }}>
+                                        Page {pageNum}
+                                    </div>
+
+                                    <canvas
+                                        ref={(el) => {
+                                            if (el) canvasRefs.current.set(pageNum, el);
+                                        }}
+                                        style={{
+                                            display: 'block',
+                                        }}
+                                    />
+                                    <div
+                                        ref={(el) => {
+                                            if (el) textLayerRefs.current.set(pageNum, el);
+                                        }}
+                                        className="textLayer"
+                                        style={{
+                                            position: 'absolute',
+                                            left: 0,
+                                            top: 0,
+                                            right: 0,
+                                            bottom: 0,
+                                            overflow: 'hidden',
+                                            opacity: 0.2,
+                                            lineHeight: 1,
+                                            userSelect: 'text',
+                                            cursor: 'text',
+                                        }}
+                                    />
+                                    <div
+                                        ref={(el) => {
+                                            if (el) highlightLayerRefs.current.set(pageNum, el);
+                                        }}
+                                        style={{
+                                            position: 'absolute',
+                                            left: 0,
+                                            top: 0,
+                                            right: 0,
+                                            bottom: 0,
+                                            pointerEvents: 'none',
+                                        }}
+                                    />
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>
