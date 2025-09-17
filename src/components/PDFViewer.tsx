@@ -121,7 +121,7 @@ const PDFHighlighter = () => {
         return () => document.body.removeChild(script);
     }, []);
 
-    // Handle file upload
+    // Handle file upload - FIX: Reset highlights when loading new PDF
     const handleFileUpload = async (uploadedFile: File) => {
         if (uploadedFile.type !== 'application/pdf') {
             alert('Please upload a PDF file');
@@ -131,6 +131,8 @@ const PDFHighlighter = () => {
         setFile(uploadedFile);
         setIsLoading(true);
         setRenderedPages(new Set());
+        // FIX: Clear highlights from previous PDF
+        setHighlights([]);
 
         try {
             const arrayBuffer = await uploadedFile.arrayBuffer();
@@ -324,6 +326,100 @@ const PDFHighlighter = () => {
             document.removeEventListener('touchend', handleSelection);
         };
     }, []);
+
+    // FIX: Handle back button with save/discard confirmation
+    const handleBackButton = () => {
+        if (highlights.length > 0) {
+            const confirmMessage = `You have ${highlights.length} highlight${highlights.length > 1 ? 's' : ''} in this document. What would you like to do?`;
+
+            // Create custom modal
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.5);
+                z-index: 10000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background: white;
+                padding: 2rem;
+                border-radius: 1rem;
+                max-width: 400px;
+                width: 90%;
+                text-align: center;
+                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            `;
+
+            modalContent.innerHTML = `
+                <h3 style="margin-bottom: 1rem; font-size: 1.25rem; font-weight: 600;">Save Highlights?</h3>
+                <p style="margin-bottom: 2rem; color: #6b7280;">${confirmMessage}</p>
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <button id="saveBtn" style="padding: 0.75rem 1.5rem; background: #10b981; color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500;">
+                        Save & Continue
+                    </button>
+                    <button id="discardBtn" style="padding: 0.75rem 1.5rem; background: #ef4444; color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500;">
+                        Discard Changes
+                    </button>
+                    <button id="cancelBtn" style="padding: 0.75rem 1.5rem; background: #6b7280; color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500;">
+                        Cancel
+                    </button>
+                </div>
+            `;
+
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+
+            // Handle save button
+            modalContent.querySelector('#saveBtn')?.addEventListener('click', () => {
+                exportHighlights();
+                resetToUploadScreen();
+                document.body.removeChild(modal);
+                showToast('Highlights saved and exported');
+            });
+
+            // Handle discard button
+            modalContent.querySelector('#discardBtn')?.addEventListener('click', () => {
+                resetToUploadScreen();
+                document.body.removeChild(modal);
+                showToast('Changes discarded');
+            });
+
+            // Handle cancel button
+            modalContent.querySelector('#cancelBtn')?.addEventListener('click', () => {
+                document.body.removeChild(modal);
+            });
+
+            // Handle clicking outside modal
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    document.body.removeChild(modal);
+                }
+            });
+        } else {
+            // No highlights, just go back
+            resetToUploadScreen();
+        }
+    };
+
+    // FIX: Reset all state to go back to upload screen
+    const resetToUploadScreen = () => {
+        setFile(null);
+        setHighlights([]);
+        setPdfDoc(null);
+        setCurrentPage(1);
+        setTotalPages(0);
+        setSelectedText('');
+        setSearchTerm('');
+        setRenderedPages(new Set());
+    };
 
     // Toast notification
     const showToast = (message: string) => {
@@ -665,7 +761,7 @@ const PDFHighlighter = () => {
                     }}>
                         <strong>Selected:</strong> "{selectedText.substring(0, 50)}{selectedText.length > 50 ? '...' : ''}"
                         <div style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}>
-                            👆 Click a color below to highlight
+                            Click a color below to highlight
                         </div>
                     </div>
                 )}
@@ -987,7 +1083,7 @@ const PDFHighlighter = () => {
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <button
-                            onClick={() => setFile(null)}
+                            onClick={handleBackButton}
                             style={{
                                 padding: '0.5rem 1rem',
                                 backgroundColor: '#6b7280',
