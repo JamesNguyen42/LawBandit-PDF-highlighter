@@ -53,12 +53,12 @@ const PDFHighlighter = () => {
 
     // Color options with ability to add custom colors
     const defaultColors: ColorOption[] = [
-        { name: 'Yellow', value: '#fbbf24', bg: '#fef3c7' },
-        { name: 'Blue', value: '#3b82f6', bg: '#dbeafe' },
-        { name: 'Green', value: '#10b981', bg: '#d1fae5' },
-        { name: 'Pink', value: '#ec4899', bg: '#fce7f3' },
-        { name: 'Purple', value: '#8b5cf6', bg: '#ede9fe' },
-        { name: 'Orange', value: '#f97316', bg: '#fed7aa' },
+        { name: 'Yellow', value: '#fbbf24', bg: '#fef08a' },
+        { name: 'Blue', value: '#3b82f6', bg: '#93c5fd' },
+        { name: 'Green', value: '#10b981', bg: '#6ee7b7' },
+        { name: 'Pink', value: '#ec4899', bg: '#f472b6' },
+        { name: 'Purple', value: '#8b5cf6', bg: '#a78bfa' },
+        { name: 'Orange', value: '#f97316', bg: '#fb923c' },
     ];
 
     // All colors (default + custom)
@@ -67,9 +67,9 @@ const PDFHighlighter = () => {
     // Helper function to generate background color from main color
     const generateBackgroundColor = (mainColor: string) => {
         const hex = mainColor.replace('#', '');
-        const r = parseInt(hex.substr(0, 2), 16);
-        const g = parseInt(hex.substr(2, 2), 16);
-        const b = parseInt(hex.substr(4, 2), 16);
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
 
         const lighten = (color: number) => Math.min(255, Math.floor(color + (255 - color) * 0.7));
 
@@ -233,7 +233,7 @@ const PDFHighlighter = () => {
                     width: absoluteWidth + 'px',
                     height: absoluteHeight + 'px',
                     backgroundColor: highlight.background,
-                    opacity: '0.4',
+                    opacity: '0.6',
                     pointerEvents: 'none',
                     borderRadius: '2px'
                 });
@@ -513,7 +513,7 @@ const PDFHighlighter = () => {
     };
 
     // Handle page input
-    const handlePageInput = (e: React.KeyboardEvent) => {
+    const handlePageInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             const pageNum = parseInt(pageInputValue);
             if (pageNum && pageNum >= 1 && pageNum <= totalPages) {
@@ -535,7 +535,7 @@ const PDFHighlighter = () => {
             setRenderedPages(new Set());
 
             const container = scrollContainerRef.current;
-            let pagesToRender = [];
+            let pagesToRender: number[] = [];
 
             if (container) {
                 const containerRect = container.getBoundingClientRect();
@@ -603,7 +603,7 @@ const PDFHighlighter = () => {
     };
 
     // Handle zoom input
-    const handleZoomInput = (e: React.KeyboardEvent) => {
+    const handleZoomInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             const zoomValue = parseFloat(zoomInputValue);
             if (zoomValue && zoomValue >= 50 && zoomValue <= 300) {
@@ -673,17 +673,10 @@ const PDFHighlighter = () => {
                         fontSize: '3rem',
                         fontWeight: 'bold',
                         color: '#1f2937',
-                        marginBottom: '1rem',
+                        marginBottom: '3rem',
                     }}>
                         LawBandit PDF Highlighter
                     </h1>
-                    <p style={{
-                        fontSize: '1.25rem',
-                        color: '#6b7280',
-                        marginBottom: '3rem',
-                    }}>
-                        Enhanced PDF reader with smooth highlighting and input controls
-                    </p>
 
                     <div
                         onClick={() => fileInputRef.current?.click()}
@@ -1120,7 +1113,7 @@ const PDFHighlighter = () => {
                                 type="text"
                                 value={pageInputValue}
                                 onChange={(e) => setPageInputValue(e.target.value.replace(/\D/g, ''))}
-                                onKeyPress={handlePageInput}
+                                onKeyDown={handlePageInput}
                                 onFocus={(e) => {
                                     if (!pageInputValue) {
                                         setPageInputValue('');
@@ -1184,7 +1177,7 @@ const PDFHighlighter = () => {
                                 type="text"
                                 value={zoomInputValue}
                                 onChange={(e) => setZoomInputValue(e.target.value.replace(/\D/g, ''))}
-                                onKeyPress={handleZoomInput}
+                                onKeyDown={handleZoomInput}
                                 onFocus={(e) => {
                                     if (!zoomInputValue) {
                                         setZoomInputValue('');
