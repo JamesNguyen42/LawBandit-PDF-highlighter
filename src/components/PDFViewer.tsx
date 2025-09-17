@@ -312,18 +312,19 @@ const PDFHighlighter = () => {
         }
     }, [createHighlight]);
 
-    // Handle text selection for preview
+    // Handle text selection - Use PDF.js native selection instead of custom implementation
     useEffect(() => {
-        const handleSelection = () => {
+        const handleSelectionChange = () => {
             const selection = window.getSelection();
             const text = selection?.toString().trim();
             setSelectedText(text || '');
         };
-        document.addEventListener('mouseup', handleSelection);
-        document.addEventListener('touchend', handleSelection);
+
+        // Listen for selection changes
+        document.addEventListener('selectionchange', handleSelectionChange);
+
         return () => {
-            document.removeEventListener('mouseup', handleSelection);
-            document.removeEventListener('touchend', handleSelection);
+            document.removeEventListener('selectionchange', handleSelectionChange);
         };
     }, []);
 
