@@ -190,7 +190,11 @@ const PDFHighlighter = () => {
                 textDivs: [],
             });
 
-            setRenderedPages(prev => new Set([...prev, pageNum]));
+            setRenderedPages(prev => {
+                const newSet = new Set(prev);
+                newSet.add(pageNum);
+                return newSet;
+            });
             setTimeout(() => renderHighlights(pageNum), 200);
         } catch (error) {
             console.error('Error rendering page:', error);
