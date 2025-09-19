@@ -15,6 +15,13 @@ interface Highlight {
         width: number; // Now stored as percentage of canvas width (0-1)
         height: number; // Now stored as percentage of canvas height (0-1)
     };
+    // NEW: Store multiple rectangles for precise multi-line highlighting
+    rects?: Array<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    }>;
     created: string;
 }
 
@@ -199,7 +206,106 @@ const PDFHighlighter = () => {
         }
     };
 
-    // Render highlights - Convert relative positions to absolute pixels based on current scale
+    // NEW: Get precise selection rectangles for multi-line selections with gap filling
+    const getSelectionRects = (selection: Selection): DOMRect[] => {
+        const rects: DOMRect[] = [];
+
+        if (selection.rangeCount === 0) return rects;
+
+        const range = selection.getRangeAt(0);
+
+        try {
+            // Get all client rectangles from the range
+            const clientRects = range.getClientRects();
+
+            if (clientRects.length === 0) {
+                // Fallback to bounding rect
+                rects.push(range.getBoundingClientRect());
+                return rects;
+            }
+
+            // Convert DOMRectList to array and filter out tiny rects
+            const validRects: DOMRect[] = [];
+            for (let i = 0; i < clientRects.length; i++) {
+                const rect = clientRects[i];
+                if (rect.width > 2 && rect.height > 2) {
+                    validRects.push(rect);
+                }
+            }
+
+            if (validRects.length === 0) {
+                rects.push(range.getBoundingClientRect());
+                return rects;
+            }
+
+            // Sort rectangles by position (top to bottom, left to right)
+            validRects.sort((a, b) => {
+                if (Math.abs(a.top - b.top) < 5) {
+                    // Same line, sort by left position
+                    return a.left - b.left;
+                }
+                return a.top - b.top;
+            });
+
+            // Group rectangles by lines (rectangles with similar top positions)
+            const lines: DOMRect[][] = [];
+            let currentLine: DOMRect[] = [];
+            let currentTop = validRects[0].top;
+
+            for (const rect of validRects) {
+                if (Math.abs(rect.top - currentTop) < 5) {
+                    // Same line
+                    currentLine.push(rect);
+                } else {
+                    // New line
+                    if (currentLine.length > 0) {
+                        lines.push(currentLine);
+                    }
+                    currentLine = [rect];
+                    currentTop = rect.top;
+                }
+            }
+            if (currentLine.length > 0) {
+                lines.push(currentLine);
+            }
+
+            // For each line, create continuous rectangles to fill gaps
+            for (const lineRects of lines) {
+                if (lineRects.length === 1) {
+                    rects.push(lineRects[0]);
+                } else {
+                    // Merge rectangles on the same line to fill gaps
+                    const sortedLineRects = lineRects.sort((a, b) => a.left - b.left);
+
+                    const firstRect = sortedLineRects[0];
+                    const lastRect = sortedLineRects[sortedLineRects.length - 1];
+
+                    // Create a continuous rectangle from the leftmost to rightmost
+                    const mergedRect = new DOMRect(
+                        firstRect.left,
+                        firstRect.top,
+                        (lastRect.right - firstRect.left),
+                        Math.max(firstRect.height, lastRect.height)
+                    );
+
+                    rects.push(mergedRect);
+                }
+            }
+
+            // If we still don't have good rectangles, use the overall bounding rect
+            if (rects.length === 0) {
+                rects.push(range.getBoundingClientRect());
+            }
+
+        } catch (error) {
+            console.warn('Error getting selection rectangles, falling back to bounding rect:', error);
+            rects.push(range.getBoundingClientRect());
+        }
+
+        return rects;
+    };
+
+    // UPDATED: Render highlights with multiple rectangles support
     const renderHighlights = useCallback((pageNum: number, highlightsToRender?: Highlight[]) => {
         const highlightLayer = highlightLayerRefs.current.get(pageNum);
         const canvas = canvasRefs.current.get(pageNum);
@@ -214,12 +320,36 @@ const PDFHighlighter = () => {
         const pageHighlights = currentHighlights.filter(h => h.pageNumber === pageNum);
 
         pageHighlights.forEach(highlight => {
-            if (highlight.position) {
-                const highlightDiv = document.createElement('div');
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
 
-                // Convert relative positions back to absolute pixels based on current canvas size
-                const canvasWidth = canvas.width;
-                const canvasHeight = canvas.height;
+            // Use new rects if available, otherwise fall back to old position
+            if (highlight.rects && highlight.rects.length > 0) {
+                highlight.rects.forEach(rect => {
+                    const highlightDiv = document.createElement('div');
+
+                    const absoluteX = rect.x * canvasWidth;
+                    const absoluteY = rect.y * canvasHeight;
+                    const absoluteWidth = rect.width * canvasWidth;
+                    const absoluteHeight = rect.height * canvasHeight;
+
+                    Object.assign(highlightDiv.style, {
+                        position: 'absolute',
+                        left: absoluteX + 'px',
+                        top: absoluteY + 'px',
+                        width: absoluteWidth + 'px',
+                        height: absoluteHeight + 'px',
+                        backgroundColor: highlight.background,
+                        opacity: '0.6',
+                        pointerEvents: 'none',
+                        borderRadius: '2px'
+                    });
+                    highlightDiv.className = 'pdf-highlight';
+                    highlightLayer.appendChild(highlightDiv);
+                });
+            } else if (highlight.position) {
+                // Fallback to old single rectangle method
+                const highlightDiv = document.createElement('div');
 
                 const absoluteX = highlight.position.x * canvasWidth;
                 const absoluteY = highlight.position.y * canvasHeight;
@@ -243,46 +373,63 @@ const PDFHighlighter = () => {
         });
     }, [highlights]);
 
-    // Create highlight function - Store relative positions that scale properly
+    // UPDATED: Create highlight with precise rectangle detection
     const createHighlight = useCallback((text: string, color: string, background: string) => {
         if (!text || text.length < 2) return;
 
         const selection = window.getSelection();
         if (!selection || selection.rangeCount === 0) return;
 
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
+        // Get precise selection rectangles
+        const selectionRects = getSelectionRects(selection);
+        if (selectionRects.length === 0) return;
 
+        // Find which page this selection is on
         let selectedPageNum = currentPage;
         let textLayer = textLayerRefs.current.get(currentPage);
 
+        // Check which text layer contains this selection
         for (let [pageNum, layer] of textLayerRefs.current) {
             const layerRect = layer.getBoundingClientRect();
-            if (rect.top >= layerRect.top && rect.bottom <= layerRect.bottom) {
+            const firstSelectionRect = selectionRects[0];
+
+            if (firstSelectionRect.top >= layerRect.top &&
+                firstSelectionRect.bottom <= layerRect.bottom) {
                 selectedPageNum = pageNum;
                 textLayer = layer;
                 break;
             }
         }
 
-        let position = undefined;
-        if (textLayer) {
-            const textLayerRect = textLayer.getBoundingClientRect();
-            const canvas = canvasRefs.current.get(selectedPageNum);
+        if (!textLayer) return;
 
-            if (canvas) {
-                // Store positions as percentages of the canvas size for proper scaling
-                const canvasWidth = canvas.width;
-                const canvasHeight = canvas.height;
+        const canvas = canvasRefs.current.get(selectedPageNum);
+        if (!canvas) return;
 
-                position = {
-                    x: (rect.left - textLayerRect.left) / canvasWidth,
-                    y: (rect.top - textLayerRect.top) / canvasHeight,
-                    width: rect.width / canvasWidth,
-                    height: rect.height / canvasHeight,
-                };
-            }
-        }
+        const textLayerRect = textLayer.getBoundingClientRect();
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+
+        // Convert all selection rectangles to relative coordinates
+        const relativeRects = selectionRects.map(rect => ({
+            x: (rect.left - textLayerRect.left) / canvasWidth,
+            y: (rect.top - textLayerRect.top) / canvasHeight,
+            width: rect.width / canvasWidth,
+            height: rect.height / canvasHeight,
+        }));
+
+        // Also create a fallback position (bounding box of all rects)
+        const minX = Math.min(...relativeRects.map(r => r.x));
+        const minY = Math.min(...relativeRects.map(r => r.y));
+        const maxX = Math.max(...relativeRects.map(r => r.x + r.width));
+        const maxY = Math.max(...relativeRects.map(r => r.y + r.height));
+
+        const fallbackPosition = {
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY,
+        };
 
         const newHighlight: Highlight = {
             id: Date.now().toString() + Math.random().toString(36),
@@ -290,7 +437,8 @@ const PDFHighlighter = () => {
             color: color,
             background: background,
             pageNumber: selectedPageNum,
-            position,
+            position: fallbackPosition, // Keep for backward compatibility
+            rects: relativeRects, // NEW: Precise rectangles
             created: new Date().toLocaleTimeString(),
         };
 
