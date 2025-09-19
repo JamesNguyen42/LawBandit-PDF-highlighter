@@ -364,7 +364,7 @@ const PDFHighlighter = () => {
         let selectedPageNum = currentPage;
         let textLayer = textLayerRefs.current.get(currentPage);
 
-        for (let [pageNum, layer] of textLayerRefs.current) {
+        for (let [pageNum, layer] of Array.from(textLayerRefs.current)) {
             const layerRect = layer.getBoundingClientRect();
             const firstSelectionRect = selectionRects[0];
 
@@ -1086,7 +1086,7 @@ const PDFHighlighter = () => {
                         <button
                             onClick={() => {
                                 setHighlights([]);
-                                for (let pageNum of renderedPages) {
+                                for (let pageNum of Array.from(renderedPages)) {
                                     renderHighlights(pageNum, []);
                                 }
                                 showToast('All highlights cleared');

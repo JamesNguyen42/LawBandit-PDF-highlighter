@@ -4,11 +4,6 @@ const nextConfig = {
         config.resolve.alias.canvas = false;
         return config;
     },
-    // Add these for better compatibility
-    experimental: {
-        esmExternals: false,
-    },
-    // Disable strict mode for compatibility with PDF.js
     reactStrictMode: false,
 }
 
