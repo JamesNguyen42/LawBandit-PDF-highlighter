@@ -1,8 +1,6 @@
-﻿// Enhanced PDF Viewer with Direct Text Highlighting - COMPLETE FIXED VERSION
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Highlighter, Trash2, Download, Search, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Copy, Palette } from 'lucide-react';
+﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Highlighter, Trash2, Download, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Palette } from 'lucide-react';
 
-// Types
 interface Highlight {
     id: string;
     text: string;
@@ -10,12 +8,11 @@ interface Highlight {
     background: string;
     pageNumber: number;
     position?: {
-        x: number; // Now stored as percentage of canvas width (0-1)
-        y: number; // Now stored as percentage of canvas height (0-1)
-        width: number; // Now stored as percentage of canvas width (0-1)
-        height: number; // Now stored as percentage of canvas height (0-1)
+        x: number;
+        y: number;
+        width: number;
+        height: number;
     };
-    // NEW: Store multiple rectangles for precise multi-line highlighting
     rects?: Array<{
         x: number;
         y: number;
@@ -32,7 +29,6 @@ interface ColorOption {
 }
 
 const PDFHighlighter = () => {
-    // State
     const [file, setFile] = useState<File | null>(null);
     const [pdfDoc, setPdfDoc] = useState<any>(null);
     const [currentPage, setCurrentPage] = useState(1);
@@ -49,8 +45,8 @@ const PDFHighlighter = () => {
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [pageInputValue, setPageInputValue] = useState('');
     const [zoomInputValue, setZoomInputValue] = useState('');
+    const [isExporting, setIsExporting] = useState(false);
 
-    // Refs
     const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
     const textLayerRefs = useRef<Map<number, HTMLDivElement>>(new Map());
     const highlightLayerRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -58,7 +54,6 @@ const PDFHighlighter = () => {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const pageContainerRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
-    // Color options with ability to add custom colors
     const defaultColors: ColorOption[] = [
         { name: 'Yellow', value: '#fbbf24', bg: '#fef08a' },
         { name: 'Blue', value: '#3b82f6', bg: '#93c5fd' },
@@ -68,10 +63,8 @@ const PDFHighlighter = () => {
         { name: 'Orange', value: '#f97316', bg: '#fb923c' },
     ];
 
-    // All colors (default + custom)
     const allColors = [...defaultColors, ...customColors];
 
-    // Helper function to generate background color from main color
     const generateBackgroundColor = (mainColor: string) => {
         const hex = mainColor.replace('#', '');
         const r = parseInt(hex.substring(0, 2), 16);
@@ -87,7 +80,6 @@ const PDFHighlighter = () => {
         return `rgb(${lightR}, ${lightG}, ${lightB})`;
     };
 
-    // Add custom color
     const addCustomColor = (colorHex: string) => {
         const backgroundColor = generateBackgroundColor(colorHex);
         const colorName = `Custom ${customColors.length + 1}`;
@@ -105,7 +97,6 @@ const PDFHighlighter = () => {
         showToast(`Added custom color: ${colorHex}`);
     };
 
-    // Remove custom color
     const removeCustomColor = (colorValue: string) => {
         setCustomColors(prev => prev.filter(color => color.value !== colorValue));
         if (selectedColor === colorValue) {
@@ -115,7 +106,6 @@ const PDFHighlighter = () => {
         showToast('Custom color removed');
     };
 
-    // Load PDF.js
     useEffect(() => {
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
@@ -128,7 +118,6 @@ const PDFHighlighter = () => {
         return () => document.body.removeChild(script);
     }, []);
 
-    // Handle file upload - FIX: Reset highlights when loading new PDF
     const handleFileUpload = async (uploadedFile: File) => {
         if (uploadedFile.type !== 'application/pdf') {
             alert('Please upload a PDF file');
@@ -138,7 +127,6 @@ const PDFHighlighter = () => {
         setFile(uploadedFile);
         setIsLoading(true);
         setRenderedPages(new Set());
-        // FIX: Clear highlights from previous PDF
         setHighlights([]);
 
         try {
@@ -150,7 +138,6 @@ const PDFHighlighter = () => {
             setTotalPages(pdf.numPages);
             setCurrentPage(1);
 
-            // Render first few pages
             renderPage(pdf, 1);
             if (pdf.numPages > 1) renderPage(pdf, 2);
             if (pdf.numPages > 2) renderPage(pdf, 3);
@@ -162,7 +149,6 @@ const PDFHighlighter = () => {
         }
     };
 
-    // Render PDF page
     const renderPage = async (pdf: any, pageNum: number) => {
         if (!pdf) return;
 
@@ -206,7 +192,6 @@ const PDFHighlighter = () => {
         }
     };
 
-    // NEW: Get precise selection rectangles for multi-line selections with gap filling
     const getSelectionRects = (selection: Selection): DOMRect[] => {
         const rects: DOMRect[] = [];
 
@@ -215,16 +200,13 @@ const PDFHighlighter = () => {
         const range = selection.getRangeAt(0);
 
         try {
-            // Get all client rectangles from the range
             const clientRects = range.getClientRects();
 
             if (clientRects.length === 0) {
-                // Fallback to bounding rect
                 rects.push(range.getBoundingClientRect());
                 return rects;
             }
 
-            // Convert DOMRectList to array and filter out tiny rects
             const validRects: DOMRect[] = [];
             for (let i = 0; i < clientRects.length; i++) {
                 const rect = clientRects[i];
@@ -238,26 +220,21 @@ const PDFHighlighter = () => {
                 return rects;
             }
 
-            // Sort rectangles by position (top to bottom, left to right)
             validRects.sort((a, b) => {
                 if (Math.abs(a.top - b.top) < 5) {
-                    // Same line, sort by left position
                     return a.left - b.left;
                 }
                 return a.top - b.top;
             });
 
-            // Group rectangles by lines (rectangles with similar top positions)
             const lines: DOMRect[][] = [];
             let currentLine: DOMRect[] = [];
             let currentTop = validRects[0].top;
 
             for (const rect of validRects) {
                 if (Math.abs(rect.top - currentTop) < 5) {
-                    // Same line
                     currentLine.push(rect);
                 } else {
-                    // New line
                     if (currentLine.length > 0) {
                         lines.push(currentLine);
                     }
@@ -269,18 +246,15 @@ const PDFHighlighter = () => {
                 lines.push(currentLine);
             }
 
-            // For each line, create continuous rectangles to fill gaps
             for (const lineRects of lines) {
                 if (lineRects.length === 1) {
                     rects.push(lineRects[0]);
                 } else {
-                    // Merge rectangles on the same line to fill gaps
                     const sortedLineRects = lineRects.sort((a, b) => a.left - b.left);
 
                     const firstRect = sortedLineRects[0];
                     const lastRect = sortedLineRects[sortedLineRects.length - 1];
 
-                    // Create a continuous rectangle from the leftmost to rightmost
                     const mergedRect = new DOMRect(
                         firstRect.left,
                         firstRect.top,
@@ -292,7 +266,6 @@ const PDFHighlighter = () => {
                 }
             }
 
-            // If we still don't have good rectangles, use the overall bounding rect
             if (rects.length === 0) {
                 rects.push(range.getBoundingClientRect());
             }
@@ -305,7 +278,6 @@ const PDFHighlighter = () => {
         return rects;
     };
 
-    // UPDATED: Render highlights with multiple rectangles support
     const renderHighlights = useCallback((pageNum: number, highlightsToRender?: Highlight[]) => {
         const highlightLayer = highlightLayerRefs.current.get(pageNum);
         const canvas = canvasRefs.current.get(pageNum);
@@ -323,7 +295,6 @@ const PDFHighlighter = () => {
             const canvasWidth = canvas.width;
             const canvasHeight = canvas.height;
 
-            // Use new rects if available, otherwise fall back to old position
             if (highlight.rects && highlight.rects.length > 0) {
                 highlight.rects.forEach(rect => {
                     const highlightDiv = document.createElement('div');
@@ -348,7 +319,6 @@ const PDFHighlighter = () => {
                     highlightLayer.appendChild(highlightDiv);
                 });
             } else if (highlight.position) {
-                // Fallback to old single rectangle method
                 const highlightDiv = document.createElement('div');
 
                 const absoluteX = highlight.position.x * canvasWidth;
@@ -373,22 +343,18 @@ const PDFHighlighter = () => {
         });
     }, [highlights]);
 
-    // UPDATED: Create highlight with precise rectangle detection
     const createHighlight = useCallback((text: string, color: string, background: string) => {
         if (!text || text.length < 2) return;
 
         const selection = window.getSelection();
         if (!selection || selection.rangeCount === 0) return;
 
-        // Get precise selection rectangles
         const selectionRects = getSelectionRects(selection);
         if (selectionRects.length === 0) return;
 
-        // Find which page this selection is on
         let selectedPageNum = currentPage;
         let textLayer = textLayerRefs.current.get(currentPage);
 
-        // Check which text layer contains this selection
         for (let [pageNum, layer] of textLayerRefs.current) {
             const layerRect = layer.getBoundingClientRect();
             const firstSelectionRect = selectionRects[0];
@@ -410,7 +376,6 @@ const PDFHighlighter = () => {
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
 
-        // Convert all selection rectangles to relative coordinates
         const relativeRects = selectionRects.map(rect => ({
             x: (rect.left - textLayerRect.left) / canvasWidth,
             y: (rect.top - textLayerRect.top) / canvasHeight,
@@ -418,7 +383,6 @@ const PDFHighlighter = () => {
             height: rect.height / canvasHeight,
         }));
 
-        // Also create a fallback position (bounding box of all rects)
         const minX = Math.min(...relativeRects.map(r => r.x));
         const minY = Math.min(...relativeRects.map(r => r.y));
         const maxX = Math.max(...relativeRects.map(r => r.x + r.width));
@@ -437,8 +401,8 @@ const PDFHighlighter = () => {
             color: color,
             background: background,
             pageNumber: selectedPageNum,
-            position: fallbackPosition, // Keep for backward compatibility
-            rects: relativeRects, // NEW: Precise rectangles
+            position: fallbackPosition,
+            rects: relativeRects,
             created: new Date().toLocaleTimeString(),
         };
 
@@ -449,7 +413,6 @@ const PDFHighlighter = () => {
         selection.removeAllRanges();
     }, [currentPage, highlights, renderHighlights]);
 
-    // Handle color selection
     const handleColorSelection = useCallback((color: ColorOption) => {
         setSelectedColor(color.value);
         setSelectedBackground(color.bg);
@@ -460,7 +423,6 @@ const PDFHighlighter = () => {
         }
     }, [createHighlight]);
 
-    // Handle text selection - Use PDF.js native selection instead of custom implementation
     useEffect(() => {
         const handleSelectionChange = () => {
             const selection = window.getSelection();
@@ -468,7 +430,6 @@ const PDFHighlighter = () => {
             setSelectedText(text || '');
         };
 
-        // Listen for selection changes
         document.addEventListener('selectionchange', handleSelectionChange);
 
         return () => {
@@ -476,12 +437,88 @@ const PDFHighlighter = () => {
         };
     }, []);
 
-    // FIX: Handle back button with save/discard confirmation
+    const exportPDFWithHighlights = async () => {
+        if (highlights.length === 0 || !pdfDoc) {
+            showToast('No highlights to export');
+            return;
+        }
+
+        setIsExporting(true);
+        showToast('Generating PDF with highlights...');
+
+        try {
+            // Load jsPDF and html2canvas
+            const jsPDFScript = document.createElement('script');
+            jsPDFScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+
+            const html2canvasScript = document.createElement('script');
+            html2canvasScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+
+            document.head.appendChild(jsPDFScript);
+            document.head.appendChild(html2canvasScript);
+
+            await new Promise((resolve) => {
+                let scriptsLoaded = 0;
+                const checkLoaded = () => {
+                    scriptsLoaded++;
+                    if (scriptsLoaded === 2) resolve(undefined);
+                };
+                jsPDFScript.onload = checkLoaded;
+                html2canvasScript.onload = checkLoaded;
+            });
+
+            const { jsPDF } = (window as any).jspdf;
+            const pdf = new jsPDF('p', 'pt', 'a4');
+
+            // Render each page with highlights
+            for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                if (pageNum > 1) {
+                    pdf.addPage();
+                }
+
+                const pageContainer = pageContainerRefs.current.get(pageNum);
+                if (!pageContainer) continue;
+
+                // Temporarily show all highlights for this page
+                await renderHighlights(pageNum);
+
+                // Capture the page with highlights
+                const canvas = await (window as any).html2canvas(pageContainer, {
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff'
+                });
+
+                const imgData = canvas.toDataURL('image/jpeg', 0.8);
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+            }
+
+            // Save the PDF
+            const filename = `${file?.name?.replace('.pdf', '')}_highlighted.pdf`;
+            pdf.save(filename);
+
+            showToast(`PDF exported as ${filename}`);
+
+            // Clean up
+            document.head.removeChild(jsPDFScript);
+            document.head.removeChild(html2canvasScript);
+
+        } catch (error) {
+            console.error('Error exporting PDF:', error);
+            showToast('Error exporting PDF. Please try again.');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     const handleBackButton = () => {
         if (highlights.length > 0) {
             const confirmMessage = `You have ${highlights.length} highlight${highlights.length > 1 ? 's' : ''} in this document. What would you like to do?`;
 
-            // Create custom modal
             const modal = document.createElement('div');
             modal.style.cssText = `
                 position: fixed;
@@ -512,7 +549,7 @@ const PDFHighlighter = () => {
                 <p style="margin-bottom: 2rem; color: #6b7280;">${confirmMessage}</p>
                 <div style="display: flex; gap: 1rem; justify-content: center;">
                     <button id="saveBtn" style="padding: 0.75rem 1.5rem; background: #10b981; color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500;">
-                        Save & Continue
+                        Export PDF
                     </button>
                     <button id="discardBtn" style="padding: 0.75rem 1.5rem; background: #ef4444; color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500;">
                         Discard Changes
@@ -526,39 +563,32 @@ const PDFHighlighter = () => {
             modal.appendChild(modalContent);
             document.body.appendChild(modal);
 
-            // Handle save button
             modalContent.querySelector('#saveBtn')?.addEventListener('click', () => {
-                exportHighlights();
+                exportPDFWithHighlights();
                 resetToUploadScreen();
                 document.body.removeChild(modal);
-                showToast('Highlights saved and exported');
             });
 
-            // Handle discard button
             modalContent.querySelector('#discardBtn')?.addEventListener('click', () => {
                 resetToUploadScreen();
                 document.body.removeChild(modal);
                 showToast('Changes discarded');
             });
 
-            // Handle cancel button
             modalContent.querySelector('#cancelBtn')?.addEventListener('click', () => {
                 document.body.removeChild(modal);
             });
 
-            // Handle clicking outside modal
             modal.addEventListener('click', (e) => {
                 if (e.target === modal) {
                     document.body.removeChild(modal);
                 }
             });
         } else {
-            // No highlights, just go back
             resetToUploadScreen();
         }
     };
 
-    // FIX: Reset all state to go back to upload screen
     const resetToUploadScreen = () => {
         setFile(null);
         setHighlights([]);
@@ -570,7 +600,6 @@ const PDFHighlighter = () => {
         setRenderedPages(new Set());
     };
 
-    // Toast notification
     const showToast = (message: string) => {
         const toast = document.createElement('div');
         toast.textContent = message;
@@ -590,7 +619,6 @@ const PDFHighlighter = () => {
         setTimeout(() => toast.remove(), 3000);
     };
 
-    // Scroll handling
     const handleScroll = useCallback(() => {
         if (!scrollContainerRef.current || !pdfDoc) return;
 
@@ -639,7 +667,6 @@ const PDFHighlighter = () => {
         return () => container.removeEventListener('scroll', handleScroll);
     }, [handleScroll]);
 
-    // Navigation with smooth scrolling
     const goToPage = (pageNum: number) => {
         if (pageNum < 1 || pageNum > totalPages) return;
 
@@ -661,7 +688,6 @@ const PDFHighlighter = () => {
         setPageInputValue('');
     };
 
-    // Handle page input
     const handlePageInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             const pageNum = parseInt(pageInputValue);
@@ -674,13 +700,11 @@ const PDFHighlighter = () => {
         }
     };
 
-    // Zoom - Re-render pages more aggressively to handle zoom out scenario
     const handleZoom = (newScale: number) => {
         setScale(newScale);
         setZoomInputValue('');
 
         if (pdfDoc) {
-            // Clear ALL rendered pages to force complete re-render at new scale
             setRenderedPages(new Set());
 
             const container = scrollContainerRef.current;
@@ -690,15 +714,12 @@ const PDFHighlighter = () => {
                 const containerRect = container.getBoundingClientRect();
                 const containerHeight = containerRect.height;
 
-                // Get a wider range of pages around the current visible area
-                // This handles zoom out where more pages become visible
                 for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
                     const pageContainer = pageContainerRefs.current.get(pageNum);
                     if (pageContainer) {
                         const pageRect = pageContainer.getBoundingClientRect();
 
-                        // Expand the visibility check - include pages that are close to viewport
-                        const buffer = containerHeight * 0.5; // 50% buffer above and below viewport
+                        const buffer = containerHeight * 0.5;
                         if (pageRect.bottom >= (containerRect.top - buffer) &&
                             pageRect.top <= (containerRect.bottom + buffer)) {
                             pagesToRender.push(pageNum);
@@ -706,10 +727,8 @@ const PDFHighlighter = () => {
                     }
                 }
 
-                // If zoom is getting smaller (zooming out), be even more aggressive
-                // and render a larger range around current page
                 if (newScale < scale) {
-                    const extraRange = Math.max(3, Math.ceil(5 / newScale)); // More pages for smaller zoom
+                    const extraRange = Math.max(3, Math.ceil(5 / newScale));
                     const start = Math.max(1, currentPage - extraRange);
                     const end = Math.min(totalPages, currentPage + extraRange);
 
@@ -721,7 +740,6 @@ const PDFHighlighter = () => {
                 }
             }
 
-            // If no pages detected, fall back to a range around current page
             if (pagesToRender.length === 0) {
                 const range = Math.max(3, Math.ceil(3 / newScale));
                 const start = Math.max(1, currentPage - range);
@@ -732,26 +750,22 @@ const PDFHighlighter = () => {
                 }
             }
 
-            // Sort pages and render them
             pagesToRender.sort((a, b) => a - b);
 
-            // Render current page first for immediate feedback
             if (pagesToRender.includes(currentPage)) {
                 renderPage(pdfDoc, currentPage);
             }
 
-            // Then render other pages with a small delay to avoid blocking
             pagesToRender.forEach((pageNum, index) => {
                 if (pageNum !== currentPage) {
                     setTimeout(() => {
                         renderPage(pdfDoc, pageNum);
-                    }, index * 50); // 50ms delay between each page
+                    }, index * 50);
                 }
             });
         }
     };
 
-    // Handle zoom input
     const handleZoomInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             const zoomValue = parseFloat(zoomInputValue);
@@ -764,33 +778,6 @@ const PDFHighlighter = () => {
         }
     };
 
-    // Export highlights
-    const exportHighlights = () => {
-        if (highlights.length === 0) {
-            showToast('No highlights to export');
-            return;
-        }
-
-        const data = {
-            filename: file?.name,
-            highlights: highlights,
-            customColors: customColors,
-            totalPages: totalPages,
-            exported: new Date().toISOString(),
-        };
-
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `highlights-${file?.name?.replace('.pdf', '')}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-
-        showToast(`Exported ${highlights.length} highlights + ${customColors.length} custom colors`);
-    };
-
-    // Delete highlight
     const deleteHighlight = useCallback((highlightId: string) => {
         const highlightToDelete = highlights.find(h => h.id === highlightId);
         const updatedHighlights = highlights.filter(h => h.id !== highlightId);
@@ -800,12 +787,10 @@ const PDFHighlighter = () => {
         }
     }, [highlights, renderHighlights]);
 
-    // Filter highlights
     const filteredHighlights = highlights.filter(h =>
         h.text.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // Main render
     if (!file) {
         return (
             <div style={{
@@ -868,7 +853,6 @@ const PDFHighlighter = () => {
 
     return (
         <div style={{ display: 'flex', height: '100vh', backgroundColor: '#f3f4f6' }}>
-            {/* Sidebar */}
             <div style={{
                 width: '360px',
                 backgroundColor: 'white',
@@ -877,7 +861,6 @@ const PDFHighlighter = () => {
                 flexDirection: 'column',
                 overflow: 'hidden',
             }}>
-                {/* Header */}
                 <div style={{ padding: '1.5rem', borderBottom: '1px solid #e5e7eb' }}>
                     <h3 style={{
                         fontSize: '1.25rem',
@@ -892,7 +875,6 @@ const PDFHighlighter = () => {
                     </h3>
                 </div>
 
-                {/* Selection Status */}
                 {selectedText && (
                     <div style={{
                         padding: '1rem 1.5rem',
@@ -908,7 +890,6 @@ const PDFHighlighter = () => {
                     </div>
                 )}
 
-                {/* Color Picker Section */}
                 <div style={{ padding: '1.5rem', borderBottom: '1px solid #e5e7eb' }}>
                     <div style={{
                         display: 'flex',
@@ -1055,7 +1036,6 @@ const PDFHighlighter = () => {
                     </div>
                 </div>
 
-                {/* Actions Section */}
                 <div style={{ padding: '1.5rem', borderBottom: '1px solid #e5e7eb' }}>
                     <input
                         type="text"
@@ -1073,17 +1053,17 @@ const PDFHighlighter = () => {
 
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button
-                            onClick={exportHighlights}
-                            disabled={highlights.length === 0}
+                            onClick={exportPDFWithHighlights}
+                            disabled={highlights.length === 0 || isExporting}
                             style={{
                                 flex: 1,
                                 padding: '0.5rem',
-                                backgroundColor: highlights.length > 0 ? '#3b82f6' : '#9ca3af',
+                                backgroundColor: (highlights.length > 0 && !isExporting) ? '#3b82f6' : '#9ca3af',
                                 color: 'white',
                                 border: 'none',
                                 borderRadius: '0.375rem',
                                 fontSize: '0.875rem',
-                                cursor: highlights.length > 0 ? 'pointer' : 'not-allowed',
+                                cursor: (highlights.length > 0 && !isExporting) ? 'pointer' : 'not-allowed',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -1091,7 +1071,7 @@ const PDFHighlighter = () => {
                             }}
                         >
                             <Download size={14} />
-                            Export
+                            {isExporting ? 'Exporting...' : 'Export PDF'}
                         </button>
 
                         <button
@@ -1124,7 +1104,6 @@ const PDFHighlighter = () => {
                     </div>
                 </div>
 
-                {/* Highlights List */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
                     {filteredHighlights.length === 0 ? (
                         <div style={{
@@ -1212,9 +1191,7 @@ const PDFHighlighter = () => {
                 </div>
             </div>
 
-            {/* PDF Viewer */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                {/* Controls */}
                 <div style={{
                     padding: '1rem 1.5rem',
                     backgroundColor: 'white',
@@ -1372,7 +1349,6 @@ const PDFHighlighter = () => {
                     </div>
                 </div>
 
-                {/* PDF Canvas - Scrollable Multi-Page */}
                 <div
                     ref={scrollContainerRef}
                     style={{
@@ -1502,7 +1478,6 @@ const PDFHighlighter = () => {
     );
 };
 
-// Extend window to include PDF.js
 declare global {
     interface Window {
         pdfjsLib: any;
